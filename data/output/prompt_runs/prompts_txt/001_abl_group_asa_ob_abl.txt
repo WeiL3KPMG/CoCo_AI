@@ -1,0 +1,101 @@
+You are comparing a candidate company to the target company (Greenko Group).
+
+Score the candidate strictly according to the criteria below and output ONLY valid JSON
+matching the specified schema. Do not include any text outside the JSON.
+
+Scoring Criteria:
+1. Business Model & Activities (0–40)
+2. Energy Transition Alignment (0–25)
+3. Scale & Asset Intensity (0–20)
+4. Geography Relevance (0–15)
+
+Rules:
+- Scores must reflect similarity to the target company, not absolute company quality.
+- Provide a clear reason for each score explaining why the company is or is not comparable.
+- overall_score must equal the sum of all criteria scores.
+- Assign tier strictly based on overall_score:
+  - Strong: 70–100
+  - Median: 40–69
+  - Weak: 0–39
+- Output must follow this exact JSON structure:
+
+{
+    "company_name": "",
+    "ticker": "",
+    "overall_score": 0,
+    "tier": "",
+    "criteria_scores": [
+      {
+        "criteria": "Business Model & Activities",
+        "max_score": 40,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Energy Transition Alignment",
+        "max_score": 25,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Scale & Asset Intensity",
+        "max_score": 20,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Geography Relevance",
+        "max_score": 15,
+        "score": 0,
+        "reason": ""
+      }
+    ],
+    "key_differences_vs_target": [],
+    "confidence": 0.0
+  }
+
+Target Company Reference:
+TARGET COMPANY PROFILE – REFERENCE FOR COCO COMPARISON
+
+Company Name:
+Greenko Group
+
+Headquarters / Primary Geography:
+India (operations across multiple Indian states)
+
+Sector:
+Renewable Energy and Energy Transition Infrastructure
+
+Core Business Description:
+Greenko Group is a renewable energy infrastructure company focused on developing, owning, and operating large-scale renewable power assets in India. Its portfolio spans wind, solar, and hydro generation, with a strategic emphasis on integrating energy storage to deliver firm and dispatchable renewable power. The company positions itself as an energy transition and decarbonization solutions provider rather than a pure power generator.
+
+Business Segments:
+- Wind power generation
+- Solar power generation
+- Hydro power generation
+- Energy storage (pumped storage and battery-based solutions)
+- Emerging green hydrogen and green ammonia initiatives
+
+Business Model:
+B2B, asset-heavy infrastructure model. Greenko develops and operates renewable and storage assets and supplies power and decarbonization solutions primarily to industrial, commercial, and grid counterparties. Revenue is driven by long-term power offtake, contracts, and structured energy solutions rather than retail sales.
+
+Scale Indicators (Approximate):
+- Installed renewable capacity: ~7.5 GW
+- Energy storage projects under development: 50 GWh near-term, scaling to ~100 GWh
+- Geographic footprint: Multi-state presence within India
+
+Strategic Positioning:
+- Focus on dispatchable renewable energy through integrated storage
+- Positioned as a deep decarbonization and energy transition platform
+- Emphasis on reliability and grid-scale solutions, not just generation capacity
+
+Keywords for AI Comparison:
+renewable energy, wind, solar, hydro, energy storage, pumped storage, grid-scale, dispatchable power, energy transition, decarbonization, infrastructure, B2B energy solutions
+
+Candidate Company:
+{
+  "Company Name": "ABL Group ASA (OB:ABL)",
+  "Exchange:Ticker": "OB:ABL",
+  "Industry Classifications": "Energy (Primary)",
+  "Business Description": "ABL Group ASA, an investment holding company, provides energy, and marine and engineering consultancy services to renewables, maritime, and oil and gas industries worldwide. It offers technical due diligence; owner’s engineering; project development; geotechnical and geophysical; HSEQ and risk consulting; marine operations and engineering; marine design, upgrade, and conversion; site investigations; clean shipping; engineering and design, jack-up and wind farm installation vessel support; advanced analysis and simulation; digital; subsea cables; and client reps and secondment services. The company also provides asset management, maintenance, inventory, and data optimization solutions; marine surveys, inspections, and audits, including vessel and marine assurance, rig inspections, industry standard audit, vessel condition surveys, pre-purchase survey, and dynamic positioning, as well as marine warranty survey services. In addition, it offers marine casualty management comprising marine salvage and wreck removal consultancy, hull and machinery claims, and P&I claims services; and expert witness and litigation support services. Further, the company provides software solutions, such as EFFIO, a cloud-based data build and optimization software for asset management strategy; ePAV, a data collection, audit, and verification software; emiTr, an emissions tracking software; iQx, a plug-and-play drilling software; hiQbe, a technology that produces qualitative data and enables game-changing efficiencies in velocity modelling; and AssetVoice, an automated workflow and real-time asset tracking software, as well as AquaSafe, a dashboard solution for crystal clear data presentation in water-related sectors. The company was formerly known as AqualisBraemar LOC ASA and changed its name to ABL Group ASA in June 2022. The company was incorporated in 2014 and is headquartered in London, the United Kingdom."
+}

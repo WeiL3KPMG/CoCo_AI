@@ -1,0 +1,101 @@
+You are comparing a candidate company to the target company (Greenko Group).
+
+Score the candidate strictly according to the criteria below and output ONLY valid JSON
+matching the specified schema. Do not include any text outside the JSON.
+
+Scoring Criteria:
+1. Business Model & Activities (0–40)
+2. Energy Transition Alignment (0–25)
+3. Scale & Asset Intensity (0–20)
+4. Geography Relevance (0–15)
+
+Rules:
+- Scores must reflect similarity to the target company, not absolute company quality.
+- Provide a clear reason for each score explaining why the company is or is not comparable.
+- overall_score must equal the sum of all criteria scores.
+- Assign tier strictly based on overall_score:
+  - Strong: 70–100
+  - Median: 40–69
+  - Weak: 0–39
+- Output must follow this exact JSON structure:
+
+{
+    "company_name": "",
+    "ticker": "",
+    "overall_score": 0,
+    "tier": "",
+    "criteria_scores": [
+      {
+        "criteria": "Business Model & Activities",
+        "max_score": 40,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Energy Transition Alignment",
+        "max_score": 25,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Scale & Asset Intensity",
+        "max_score": 20,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Geography Relevance",
+        "max_score": 15,
+        "score": 0,
+        "reason": ""
+      }
+    ],
+    "key_differences_vs_target": [],
+    "confidence": 0.0
+  }
+
+Target Company Reference:
+TARGET COMPANY PROFILE – REFERENCE FOR COCO COMPARISON
+
+Company Name:
+Greenko Group
+
+Headquarters / Primary Geography:
+India (operations across multiple Indian states)
+
+Sector:
+Renewable Energy and Energy Transition Infrastructure
+
+Core Business Description:
+Greenko Group is a renewable energy infrastructure company focused on developing, owning, and operating large-scale renewable power assets in India. Its portfolio spans wind, solar, and hydro generation, with a strategic emphasis on integrating energy storage to deliver firm and dispatchable renewable power. The company positions itself as an energy transition and decarbonization solutions provider rather than a pure power generator.
+
+Business Segments:
+- Wind power generation
+- Solar power generation
+- Hydro power generation
+- Energy storage (pumped storage and battery-based solutions)
+- Emerging green hydrogen and green ammonia initiatives
+
+Business Model:
+B2B, asset-heavy infrastructure model. Greenko develops and operates renewable and storage assets and supplies power and decarbonization solutions primarily to industrial, commercial, and grid counterparties. Revenue is driven by long-term power offtake, contracts, and structured energy solutions rather than retail sales.
+
+Scale Indicators (Approximate):
+- Installed renewable capacity: ~7.5 GW
+- Energy storage projects under development: 50 GWh near-term, scaling to ~100 GWh
+- Geographic footprint: Multi-state presence within India
+
+Strategic Positioning:
+- Focus on dispatchable renewable energy through integrated storage
+- Positioned as a deep decarbonization and energy transition platform
+- Emphasis on reliability and grid-scale solutions, not just generation capacity
+
+Keywords for AI Comparison:
+renewable energy, wind, solar, hydro, energy storage, pumped storage, grid-scale, dispatchable power, energy transition, decarbonization, infrastructure, B2B energy solutions
+
+Candidate Company:
+{
+  "Company Name": "Annica Holdings Limited (Catalist:5AL)",
+  "Exchange:Ticker": "Catalist:5AL",
+  "Industry Classifications": "Energy (Primary)",
+  "Business Description": "Annica Holdings Limited, an investment holding company, supplies oilfield equipment and related products in Brunei, Myanmar, Malaysia, Indonesia, Thailand, Singapore, Vietnam, and internationally. The company operates through Engineering Services; Oil and Gas Equipment; Renewable Energy; and Investment and Others segments. It is also involved in designing industrial plant engineering service systems, as well as in the general wholesale and trading activities; and design, engineering, procurement, construction, and commissioning of solar photovoltaic systems and related products. In addition, the company engages in the renewable energy and green technology business; manufacturing of electricity distribution and control apparatus; operation of generation facilities that produce electric energy; and wholesale of industrial machinery, equipment, and supplies. The company was incorporated in 1983 and is headquartered in Singapore."
+}

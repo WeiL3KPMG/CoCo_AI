@@ -1,0 +1,36 @@
+TARGET COMPANY PROFILE – REFERENCE FOR COCO COMPARISON
+
+Company Name:
+Greenko Group
+
+Headquarters / Primary Geography:
+India (operations across multiple Indian states)
+
+Sector:
+Renewable Energy and Energy Transition Infrastructure
+
+Core Business Description:
+Greenko Group is a renewable energy infrastructure company focused on developing, owning, and operating large-scale renewable power assets in India. Its portfolio spans wind, solar, and hydro generation, with a strategic emphasis on integrating energy storage to deliver firm and dispatchable renewable power. The company positions itself as an energy transition and decarbonization solutions provider rather than a pure power generator.
+
+Business Segments:
+- Wind power generation
+- Solar power generation
+- Hydro power generation
+- Energy storage (pumped storage and battery-based solutions)
+- Emerging green hydrogen and green ammonia initiatives
+
+Business Model:
+B2B, asset-heavy infrastructure model. Greenko develops and operates renewable and storage assets and supplies power and decarbonization solutions primarily to industrial, commercial, and grid counterparties. Revenue is driven by long-term power offtake, contracts, and structured energy solutions rather than retail sales.
+
+Scale Indicators (Approximate):
+- Installed renewable capacity: ~7.5 GW
+- Energy storage projects under development: 50 GWh near-term, scaling to ~100 GWh
+- Geographic footprint: Multi-state presence within India
+
+Strategic Positioning:
+- Focus on dispatchable renewable energy through integrated storage
+- Positioned as a deep decarbonization and energy transition platform
+- Emphasis on reliability and grid-scale solutions, not just generation capacity
+
+Keywords for AI Comparison:
+renewable energy, wind, solar, hydro, energy storage, pumped storage, grid-scale, dispatchable power, energy transition, decarbonization, infrastructure, B2B energy solutions
