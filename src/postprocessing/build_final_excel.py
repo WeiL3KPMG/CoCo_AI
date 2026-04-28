@@ -140,10 +140,7 @@ def map_tier_to_rank(tier: Any, median_label: str) -> str | None:
 
 
 def build_coco_reason(parsed: dict[str, Any], rank: str | None) -> str | None:
-    tier_justification = parsed.get("tier_justification")
-    if isinstance(tier_justification, str) and tier_justification.strip():
-        return tier_justification.strip()
-
+    """Combine per-criterion reasons (paragraph 1) with tier_justification (paragraph 2) when both exist."""
     criteria_scores = parsed.get("criteria_scores")
     reason_parts: list[str] = []
     if isinstance(criteria_scores, list):
@@ -155,10 +152,24 @@ def build_coco_reason(parsed: dict[str, Any], rank: str | None) -> str | None:
             if criteria and reason:
                 reason_parts.append(f"{criteria}: {reason}")
 
+    criterion_block: str | None = None
     if reason_parts:
         prefix = f"{rank}. " if rank else ""
-        return prefix + " | ".join(reason_parts)
+        criterion_block = prefix + " | ".join(reason_parts)
 
+    tier_raw = parsed.get("tier_justification")
+    tier_block = (
+        tier_raw.strip()
+        if isinstance(tier_raw, str) and tier_raw.strip()
+        else None
+    )
+
+    if criterion_block and tier_block:
+        return f"{criterion_block}\n\n{tier_block}"
+    if criterion_block:
+        return criterion_block
+    if tier_block:
+        return tier_block
     return None
 
 
