@@ -17,6 +17,8 @@ Rules:
   - Strong: 70–100
   - Median: 40–69
   - Weak: 0–39
+- Add a concise audit-ready explanation in `tier_justification` (2-4 sentences) that explains
+  why the final tier is Strong/Median/Weak.
 - Output must follow this exact JSON structure:
 
 {
@@ -24,6 +26,7 @@ Rules:
     "ticker": "",
     "overall_score": 0,
     "tier": "",
+    "tier_justification": "",
     "criteria_scores": [
       {
         "criteria": "Business Model & Activities",

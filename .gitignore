@@ -1,0 +1,8 @@
+secrets/scoring_config.json
+
+# Generated pipeline outputs (keep local)
+data/output/
+
+# Python
+__pycache__/
+*.py[cod]
