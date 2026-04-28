@@ -1,0 +1,34 @@
+{
+    "company_name": "",
+    "ticker": "",
+    "overall_score": 0,
+    "tier": "",
+    "criteria_scores": [
+      {
+        "criteria": "Business Model & Activities",
+        "max_score": 40,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Strategic & Sector Alignment",
+        "max_score": 25,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Scale & Asset Intensity",
+        "max_score": 20,
+        "score": 0,
+        "reason": ""
+      },
+      {
+        "criteria": "Geography Relevance",
+        "max_score": 15,
+        "score": 0,
+        "reason": ""
+      }
+    ],
+    "key_differences_vs_target": [],
+    "confidence": 0.0
+  }

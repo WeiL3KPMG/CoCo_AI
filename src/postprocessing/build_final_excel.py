@@ -62,6 +62,69 @@ def load_scoring_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+CRITERIA_ORDER: list[str] = [
+    "Business Model & Activities",
+    "Strategic & Sector Alignment",
+    "Scale & Asset Intensity",
+    "Geography Relevance",
+]
+
+# Older scoring JSON may still say "Energy Transition Alignment".
+CRITERIA_LABEL_ALIASES: dict[str, str] = {
+    "Energy Transition Alignment": "Strategic & Sector Alignment",
+}
+
+
+def canonical_criteria_label(name: str) -> str:
+    stripped = name.strip()
+    return CRITERIA_LABEL_ALIASES.get(stripped, stripped)
+
+
+def _criteria_sort_key(name: str) -> tuple[int, str]:
+    canon = canonical_criteria_label(name)
+    try:
+        return (CRITERIA_ORDER.index(canon), name)
+    except ValueError:
+        return (len(CRITERIA_ORDER), name)
+
+
+def build_score_breakdown(parsed: dict[str, Any]) -> str | None:
+    """Format criteria_scores into 'Name: XX/YY; ...' for Excel."""
+    criteria_scores = parsed.get("criteria_scores")
+    if not isinstance(criteria_scores, list) or not criteria_scores:
+        return None
+
+    parts: list[tuple[str, Any, Any]] = []
+    for item in criteria_scores:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("criteria", "")).strip()
+        score = item.get("score")
+        max_score = item.get("max_score")
+        if not name:
+            continue
+        try:
+            s = float(score) if score is not None else None
+            m = float(max_score) if max_score is not None else None
+        except (TypeError, ValueError):
+            continue
+        if s is None or m is None:
+            continue
+        # Prefer integers when whole numbers for cleaner display
+        s_disp = int(s) if s == int(s) else s
+        m_disp = int(m) if m == int(m) else m
+        parts.append((name, s_disp, m_disp))
+
+    if not parts:
+        return None
+
+    parts.sort(key=lambda t: _criteria_sort_key(t[0]))
+    return "; ".join(
+        f"{canonical_criteria_label(name)}: {s_disp}/{m_disp}"
+        for name, s_disp, m_disp in parts
+    )
+
+
 def map_tier_to_rank(tier: Any, median_label: str) -> str | None:
     if not isinstance(tier, str):
         return None
@@ -116,15 +179,19 @@ def build_finalized_records(
         scoring_row = by_index.get(idx, {})
         parsed = scoring_row.get("parsed_output")
 
-        score: Any = None
+        overall_numeric: Any = None
+        score_breakdown: str | None = None
         rank: str | None = None
         reason: str | None = None
         if isinstance(parsed, dict):
-            score = parsed.get("overall_score")
+            overall_numeric = parsed.get("overall_score")
+            score_breakdown = build_score_breakdown(parsed)
             rank = map_tier_to_rank(parsed.get("tier"), median_label=median_label)
             reason = build_coco_reason(parsed=parsed, rank=rank)
 
-        out["CoCo Score"] = score
+        # Numeric total for sorting/filtering; breakdown is human-readable rubric lines.
+        out["CoCo Score Overall"] = overall_numeric
+        out["CoCo Score"] = score_breakdown
         out["CoCo Rank"] = rank
         out["CoCo Reason"] = reason
         finalized.append(out)
@@ -136,7 +203,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Build finalized CoCo Excel with all source columns plus "
-            "'CoCo Score' and 'CoCo Rank'."
+            "'CoCo Score Overall', rubric breakdown in 'CoCo Score', "
+            "'CoCo Rank', and 'CoCo Reason'."
         )
     )
     parser.add_argument(

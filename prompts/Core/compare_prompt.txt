@@ -5,13 +5,14 @@ matching the specified schema. Do not include any text outside the JSON.
 
 Scoring Criteria:
 1. Business Model & Activities (0–40)
-2. Energy Transition Alignment (0–25)
+2. Strategic & Sector Alignment (0–25)
 3. Scale & Asset Intensity (0–20)
 4. Geography Relevance (0–15)
 
 Rules:
 - Scores must reflect similarity to the target company, not absolute company quality.
 - Provide a clear reason for each score explaining why the company is or is not comparable.
+- **Strategic & Sector Alignment:** Judge similarity of strategic positioning vs the target—sector/end-market fit, regulatory or technology themes material to that industry, and major risks/opportunities (interpret using the target profile; not limited to energy or “transition”).
 - overall_score must equal the sum of all criteria scores.
 - Assign tier strictly based on overall_score:
   - Strong: 70–100
@@ -35,7 +36,7 @@ Rules:
         "reason": ""
       },
       {
-        "criteria": "Energy Transition Alignment",
+        "criteria": "Strategic & Sector Alignment",
         "max_score": 25,
         "score": 0,
         "reason": ""

@@ -1,5 +1,8 @@
 secrets/scoring_config.json
 
+# Local / internal notes (not versioned)
+Admin/
+
 # Generated pipeline outputs (keep local)
 data/output/
 

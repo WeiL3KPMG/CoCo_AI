@@ -36,7 +36,8 @@ This is an AI-assisted workflow, not full automation of analyst judgment.
 5. **Final Excel (analyst + audit)**  
    `build_final_excel.py` merges **all original CapIQ columns** with:
 
-   - `CoCo Score` — `overall_score` from parsed JSON  
+   - `CoCo Score Overall` — numeric `overall_score` from parsed JSON  
+   - `CoCo Score` — criteria breakdown text, e.g. `Business Model & Activities: 30/40; Strategic & Sector Alignment: 18/25; Scale & Asset Intensity: 14/20; Geography Relevance: 10/15`  
    - `CoCo Rank` — `Strong` / `Median` / `Exclude` (from `Weak`)  
    - `CoCo Reason` — `tier_justification` when present, else concatenated criterion reasons  
 
@@ -124,10 +125,10 @@ Merge is by **row order** (`candidate_index` 1…N matches the CapIQ sheet rows 
 
 ## What Has Been Done (highlights)
 
-- End-to-end path: **CapIQ Excel → JSON → prompts JSONL → OpenAI scoring JSONL → finalized Excel** with score, rank, and audit reason columns.
+- End-to-end path: **CapIQ Excel → JSON → prompts JSONL → OpenAI scoring JSONL → finalized Excel** with numeric score, score breakdown, rank, and audit reason columns.
 - **Secrets config**: `secrets/scoring_config.json` for API key + model choice; example file for onboarding; gitignore on the real file.
 - **Scoring runner** (`run_score_batch.py`): optional `--max-rows`, auth early-stop on 401/403, end-of-run summary (`ok` / `errors` / `parsed_json_ok`), config + env + CLI resolution.
-- **Post-processing** (`build_final_excel.py`): all source columns + `CoCo Score`, `CoCo Rank`, `CoCo Reason`.
+- **Post-processing** (`build_final_excel.py`): all source columns + `CoCo Score Overall`, `CoCo Score` (criteria breakdown), `CoCo Rank`, `CoCo Reason`.
 - **Prompt**: JSON schema includes **`tier_justification`** for short audit narrative; per-criterion `reason` fields retained.
 - **Rank mapping** in Excel: `Strong` / `Median` / `Weak` → display **Strong** / **Median** / **Exclude** (strict tier strings; no typo fallbacks).
 
@@ -139,4 +140,4 @@ Merge is by **row order** (`candidate_index` 1…N matches the CapIQ sheet rows 
 
 ## Resume Prompt (for next chat)
 
-> Continue CoCo AI Agent V1. Prompts: `src/preprocessing/run_build_prompts.py` + `prompts/Core/compare_prompt.txt`. Scoring: `src/scoring/run_score_batch.py` with `secrets/scoring_config.json` for key/model. Final Excel: `src/postprocessing/build_final_excel.py` → all CapIQ columns + `CoCo Score`, `CoCo Rank`, `CoCo Reason`. Candidate fields stay minimal: Company Name, Exchange:Ticker, Industry Classifications, Business Description.
+> Continue CoCo AI Agent V1. Prompts: `src/preprocessing/run_build_prompts.py` + `prompts/Core/compare_prompt.txt`. Scoring: `src/scoring/run_score_batch.py` with `secrets/scoring_config.json` for key/model. Final Excel: `src/postprocessing/build_final_excel.py` → all CapIQ columns + `CoCo Score Overall`, `CoCo Score` (criteria breakdown), `CoCo Rank`, `CoCo Reason`. Candidate fields stay minimal: Company Name, Exchange:Ticker, Industry Classifications, Business Description.
