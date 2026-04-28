@@ -37,6 +37,7 @@ This is an AI-assisted workflow, not full automation of analyst judgment.
    `build_final_excel.py` merges **all original CapIQ columns** with:
 
    - `CoCo Score Overall` — numeric `overall_score` from parsed JSON  
+   - Row order — **sorted by descending** `CoCo Score Overall` so the workbook reads best-to-weakest comparable; ties keep the earlier CapIQ order; rows **without** a numeric overall score appear **after** scored rows (e.g. not yet scored).  
    - `CoCo Score` — criteria breakdown text, e.g. `Business Model & Activities: 30/40; Strategic & Sector Alignment: 18/25; Scale & Asset Intensity: 14/20; Geography Relevance: 10/15`  
    - `CoCo Rank` — `Strong` / `Median` / `Exclude` (from `Weak`)  
    - `CoCo Reason` — when both are present in the parsed JSON: **paragraph 1** is the tier label (e.g. `Exclude.`) plus per-criterion reasons joined with `|` (same rubric labels as `CoCo Score`); **paragraph 2** (blank line separator) is `tier_justification`. If only one side exists (e.g. older runs missing `tier_justification`), that single block is used.
@@ -51,7 +52,7 @@ This is an AI-assisted workflow, not full automation of analyst judgment.
 | `src/scoring/run_score_batch.py` | OpenAI scoring batch |
 | `src/postprocessing/build_final_excel.py` | Merge CapIQ sheet + scoring → finalized `.xlsx` |
 | `prompts/Core/compare_prompt.txt` | Master prompt + JSON schema (incl. `tier_justification`) |
-| `prompts/Traget Company/target_company_greenko.txt` | Target company reference |
+| `prompts/Target Company/target_company_greenko.txt` | Target company reference |
 | `secrets/scoring_config.example.json` | Example API config (safe to commit) |
 | `secrets/scoring_config.json` | **Your** API key + model (**gitignored** — create locally) |
 | `data/cleaned/coco_candidates_all_columns.json` | Preprocessed candidates |
@@ -145,7 +146,7 @@ The UI uploads your CapIQ file into a **temporary session folder**, runs steps 1
 - End-to-end path: **CapIQ Excel → JSON → prompts JSONL → OpenAI scoring JSONL → finalized Excel** with numeric score, score breakdown, rank, and audit reason columns.
 - **Secrets config**: `secrets/scoring_config.json` for API key + model choice; example file for onboarding; gitignore on the real file.
 - **Scoring runner** (`run_score_batch.py`): optional `--max-rows`, auth early-stop on 401/403, end-of-run summary (`ok` / `errors` / `parsed_json_ok`), config + env + CLI resolution.
-- **Post-processing** (`build_final_excel.py`): all source columns + `CoCo Score Overall`, `CoCo Score` (criteria breakdown), `CoCo Rank`, `CoCo Reason` (per-criterion reasons plus `tier_justification`, two paragraphs when both exist).
+- **Post-processing** (`build_final_excel.py`): all source columns + `CoCo Score Overall`, `CoCo Score` (criteria breakdown), `CoCo Rank`, `CoCo Reason` (per-criterion reasons plus `tier_justification`, two paragraphs when both exist); rows sorted descending by overall score.
 - **Streamlit wrapper** (`streamlit_app/app.py`): optional GUI for non-technical users; same pipeline, session-scratch workspace.
 - **Prompt**: JSON schema includes **`tier_justification`** for short audit narrative; per-criterion `reason` fields retained and merged into `CoCo Reason` as described above.
 - **Rank mapping** in Excel: `Strong` / `Median` / `Weak` → display **Strong** / **Median** / **Exclude** (strict tier strings; no typo fallbacks).
@@ -158,4 +159,4 @@ The UI uploads your CapIQ file into a **temporary session folder**, runs steps 1
 
 ## Resume Prompt (for next chat)
 
-> Continue CoCo AI Agent V1. Prompts: `src/preprocessing/run_build_prompts.py` + `prompts/Core/compare_prompt.txt`. Scoring: `src/scoring/run_score_batch.py` with `secrets/scoring_config.json` for key/model. Final Excel: `src/postprocessing/build_final_excel.py` → all CapIQ columns + `CoCo Score Overall`, `CoCo Score` (criteria breakdown), `CoCo Rank`, `CoCo Reason` (per-criterion paragraph + blank line + `tier_justification` when both exist). Candidate fields stay minimal: Company Name, Exchange:Ticker, Industry Classifications, Business Description.
+> Continue CoCo AI Agent V1. Prompts: `src/preprocessing/run_build_prompts.py` + `prompts/Core/compare_prompt.txt`. Scoring: `src/scoring/run_score_batch.py` with `secrets/scoring_config.json` for key/model. Final Excel: `src/postprocessing/build_final_excel.py` → all CapIQ columns + `CoCo Score Overall`, `CoCo Score`, `CoCo Rank`, `CoCo Reason` (per-criterion + optional `tier_justification`); rows sorted by descending overall score. Candidate fields stay minimal: Company Name, Exchange:Ticker, Industry Classifications, Business Description.

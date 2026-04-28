@@ -43,7 +43,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--target-company",
-        default="prompts/Traget Company/target_company_greenko.txt",
+        default="prompts/Target Company/target_company_greenko.txt",
         help="Target company reference text file path.",
     )
     parser.add_argument(
