@@ -1,0 +1,41 @@
+TARGET COMPANY PROFILE – REFERENCE FOR COCO COMPARISON 
+
+Company Name:
+Marketnode 
+
+Headquarters / Primary Geography:
+Singapore (with primary focus on Singapore and broader Asia-Pacific capital markets) 
+
+Sector:
+Digital Market Infrastructure / Capital Markets Infrastructure / Financial Technology 
+
+Core Business Description:
+Marketnode is a Singapore-based digital market infrastructure operator focused on modernising capital markets workflows across funds, credit, and structured products. The company provides institutional infrastructure built on distributed ledger / blockchain technology to help financial institutions automate, integrate, and distribute traditional and tokenized products. Its offerings span data services, transaction management, and tokenization / registry capabilities, positioning the firm as a neutral infrastructure layer for post-trade processing, servicing, and digital asset enablement in Asia-Pacific. 
+
+Business Segments:
+- Funds market infrastructure (Fundnode)
+- Credit / fixed income digital market infrastructure
+- Structured products infrastructure
+- Data services (conversion of unstructured data into structured downstream data)
+- Transaction management (subscriptions, redemptions, order management, corporate actions, transfer-agent-style workflows)
+- Tokenization and registry / asset servicing capabilities (including Gateway) 
+
+Business Model:
+B2B, institutional infrastructure model. Marketnode provides shared market infrastructure and workflow solutions to financial institutions and ecosystem participants such as fund managers, distributors, transfer agents, service providers, issuers, banks, and investors. The platform is designed to reduce manual processing, improve reconciliation and record-keeping, and enable issuance, distribution, settlement, and servicing of traditional and tokenized financial products. 
+Scale Indicators (Approximate / Publicly Referenced):
+- Established in 2021
+- Fundnode announced in 2022 and funds market infrastructure went live in 2024
+- 150K+ monthly Fundnode orders referenced in 2024
+- 1,496,255 funds orders processed in 2025
+- 7,353 documents processed in 2025 (data services statistic)
+- Backed by / major shareholders include SGX Group, Temasek, HSBC, and Euroclear 
+
+Strategic Positioning:
+- Positioned as Asia-Pacific’s trusted and neutral digital market infrastructure operator
+- Focused on building shared infrastructure for both traditional and tokenized financial products
+- Emphasis on workflow automation, settlement efficiency, interoperability, and industry-wide standardisation
+- Strong alignment with tokenization, blockchain-enabled fund infrastructure, and next-generation post-trade / asset-servicing models
+- Aims to build a multi-asset ecosystem starting in Asia-Pacific, with notable strength in funds infrastructure and digital fixed income / structured products 
+
+Keywords for AI Comparison:
+digital market infrastructure, financial market infrastructure, capital markets, blockchain, distributed ledger technology, DLT, tokenization, registry, asset servicing, transaction management, fund settlement, Fundnode, Gateway, structured products, credit, fixed income, post-trade infrastructure, workflow automation, Singapore, Asia-Pacific, institutional fintech

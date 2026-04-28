@@ -1,4 +1,4 @@
-You are comparing a candidate company to the target company (Greenko Group).
+You are comparing a candidate company to the target company described below.
 
 Score the candidate strictly according to the criteria below and output ONLY valid JSON
 matching the specified schema. Do not include any text outside the JSON.
@@ -6,12 +6,14 @@ matching the specified schema. Do not include any text outside the JSON.
 Scoring Criteria:
 1. Business Model & Activities (0–40)
 2. Strategic & Sector Alignment (0–25)
-3. Scale & Asset Intensity (0–20)
+3. Scale & Infrastructure Intensity (0–20)
 4. Geography Relevance (0–15)
 
 Rules:
+- Interpret each criterion in the context of the target company's actual business model and sector; do not assume the target is asset-heavy, industrial, or consumer-facing unless stated in the target profile.
 - Scores must reflect similarity to the target company, not absolute company quality.
 - Provide a clear reason for each score explaining why the company is or is not comparable.
+- Each reason should reference specific comparability dimensions such as products/workflows, customer type, infrastructure role, scale, geography, and strategic positioning.
 - **Strategic & Sector Alignment:** Judge similarity of strategic positioning vs the target—sector/end-market fit, regulatory or technology themes material to that industry, and major risks/opportunities (interpret using the target profile; not limited to energy or “transition”).
 - overall_score must equal the sum of all criteria scores.
 - Assign tier strictly based on overall_score:
@@ -20,6 +22,7 @@ Rules:
   - Weak: 0–39
 - Add a concise audit-ready explanation in `tier_justification` (2-4 sentences) that explains
   why the final tier is Strong/Median/Weak.
+- `confidence` must be a decimal between 0.0 and 1.0 and should reflect confidence in the comparability assessment based only on the provided information.
 - Output must follow this exact JSON structure:
 
 {
@@ -42,7 +45,7 @@ Rules:
         "reason": ""
       },
       {
-        "criteria": "Scale & Asset Intensity",
+        "criteria": "Scale & Infrastructure Intensity",
         "max_score": 20,
         "score": 0,
         "reason": ""

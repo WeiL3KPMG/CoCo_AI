@@ -1,0 +1,2 @@
+# Prompt templates are plaintext with embedded JSON; formatters add huge blank-line gaps.
+prompts/**/*.txt

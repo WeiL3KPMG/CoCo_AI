@@ -18,6 +18,15 @@ import streamlit as st
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+EXAMPLE_TARGET_PATH = REPO_ROOT / "prompts" / "Target Company" / "target_company_marketnode.txt"
+
+
+@st.cache_data(show_spinner=False)
+def load_example_target_text() -> str:
+    """Bundled example profile — same folder as CLI defaults; shown for copy / load-in-editor."""
+    return EXAMPLE_TARGET_PATH.read_text(encoding="utf-8")
+
+
 WORKSPACE_FILENAMES = {
     "candidates_json": "coco_candidates_all_columns.json",
     "prompts_jsonl": "coco_prompt_payloads.jsonl",
@@ -161,6 +170,60 @@ def main() -> None:
 
     sheet = str(sheet).strip() if sheet else ""
 
+    st.divider()
+    st.subheader("Target company profile")
+    st.markdown(
+        "The model compares each CapIQ candidate to **this text** (replacing `{PASTE TARGET TXT HERE}` in "
+        "`prompts/Core/compare_prompt.txt`). Write it yourself or generate it elsewhere, then paste below."
+    )
+
+    how = st.expander("How to create a profile (recommended workflow)", expanded=False)
+    with how:
+        st.markdown(
+            """
+1. Collect source material — company website, annual report, Investor Relations **About** pages.
+2. In **Microsoft Copilot** (or your preferred assistant), paste excerpts or summaries of that material.
+3. Ask the assistant to draft a **structured target-company profile** suitable for **comparable-company scoring**.
+4. Request that it mirror the **section layout and depth** shown in **Example profile** below
+   *(company name, geography, sector, core business description, segments, business model,
+   scale indicators, strategic positioning, keywords for AI comparison)*.
+5. Edit for accuracy, then paste the final text into the box under **Your target profile**.
+            """.strip()
+        )
+
+    ex = st.expander("Example profile — copy as a template", expanded=False)
+    with ex:
+        st.caption(f"Bundled file: `{EXAMPLE_TARGET_PATH.relative_to(REPO_ROOT)}`")
+        try:
+            st.code(load_example_target_text(), language="markdown")
+        except OSError:
+            st.warning(f"Could not read example file: {EXAMPLE_TARGET_PATH}")
+
+    if "target_profile_text" not in st.session_state:
+        st.session_state.target_profile_text = ""
+
+    bc1, bc2 = st.columns([1, 1])
+    with bc1:
+        if st.button("Load example into editor", key="load_target_example"):
+            try:
+                st.session_state.target_profile_text = load_example_target_text()
+            except OSError as exc:
+                st.error(f"Could not load example: {exc}")
+            else:
+                st.rerun()
+    with bc2:
+        if st.button("Clear editor", key="clear_target_profile"):
+            st.session_state.target_profile_text = ""
+            st.rerun()
+
+    st.text_area(
+        "Your target profile (required for step 2 + full run)",
+        height=320,
+        key="target_profile_text",
+        placeholder="Paste your target company profile here…",
+        help="Non-empty text is written to the session workspace and passed to run_build_prompts.py via --target-company.",
+    )
+
     max_rows_val = st.number_input(
         "Scoring — max rows (0 = score all)",
         min_value=0,
@@ -179,7 +242,23 @@ def main() -> None:
         st.warning("Upload a file and click **Save upload to workspace** first.")
         st.stop()
 
+    if run_all_btn and not str(st.session_state.get("target_profile_text", "")).strip():
+        st.warning(
+            "Paste a **target company profile** above (or click **Load example into editor**) "
+            "before **Run full pipeline**."
+        )
+        st.stop()
+
     if inp is not None and inp.exists():
+        target_company_path = ws / "target_company_user.txt"
+
+        def write_target_company_file() -> None:
+            txt = str(st.session_state.get("target_profile_text", "")).strip()
+            if not txt:
+                st.error("Target profile is empty. Paste text or load the example.")
+                st.stop()
+            target_company_path.write_text(txt + "\n", encoding="utf-8")
+
         steps = (
             (
                 "1) Excel → JSON",
@@ -201,6 +280,8 @@ def main() -> None:
                     str(paths["candidates_json"]),
                     "--output-jsonl",
                     str(paths["prompts_jsonl"]),
+                    "--target-company",
+                    str(target_company_path),
                 ],
             ),
             (
@@ -291,6 +372,7 @@ def main() -> None:
                 label_a, script, argv = steps[0]
                 run_step(label_a, 1, script, argv, log_carry="")
             if st.button("Run step 2 only", key="step2"):
+                write_target_company_file()
                 label_b, script, argv = steps[1]
                 run_step(label_b, 2, script, argv, log_carry="")
             if st.button("Run step 3 only", key="step3"):
@@ -301,6 +383,7 @@ def main() -> None:
                 run_step(label_d, 4, script, argv, log_carry="")
 
         if run_all_btn:
+            write_target_company_file()
             cumulative_log = ""
             for step_index, (step_label, script, argv) in enumerate(steps, start=1):
                 cumulative_log = run_step(

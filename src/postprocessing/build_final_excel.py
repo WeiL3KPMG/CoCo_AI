@@ -5,6 +5,13 @@ from typing import Any
 
 import pandas as pd
 
+COCO_COLUMNS_ORDER = [
+    "CoCo Score Overall",
+    "CoCo Score",
+    "CoCo Rank",
+    "CoCo Reason",
+]
+
 def detect_header_row(df: pd.DataFrame, expected_header: str = "Company Name") -> int:
     for idx, row in df.iterrows():
         values = [str(v).strip() for v in row.tolist() if pd.notna(v)]
@@ -65,13 +72,14 @@ def load_scoring_rows(path: Path) -> list[dict[str, Any]]:
 CRITERIA_ORDER: list[str] = [
     "Business Model & Activities",
     "Strategic & Sector Alignment",
-    "Scale & Asset Intensity",
+    "Scale & Infrastructure Intensity",
     "Geography Relevance",
 ]
 
 # Older scoring JSON may still say "Energy Transition Alignment".
 CRITERIA_LABEL_ALIASES: dict[str, str] = {
     "Energy Transition Alignment": "Strategic & Sector Alignment",
+    "Scale & Asset Intensity": "Scale & Infrastructure Intensity",
 }
 
 
@@ -173,6 +181,30 @@ def build_coco_reason(parsed: dict[str, Any], rank: str | None) -> str | None:
     return None
 
 
+def reorder_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Place CoCo_* columns immediately after original columns, in a fixed audit order."""
+    present_tail = [c for c in COCO_COLUMNS_ORDER if c in df.columns]
+    others = [c for c in df.columns if c not in present_tail]
+    return df[others + present_tail]
+
+
+def sort_finalized_by_overall_score_desc(df: pd.DataFrame) -> pd.DataFrame:
+    """Order rows highest ``CoCo Score Overall`` first. Ties keep original screening order."""
+    score_col = "CoCo Score Overall"
+    if score_col not in df.columns or df.empty:
+        return df
+    out = df.copy()
+    out["_coco_sheet_order"] = range(len(out))
+    out = out.sort_values(
+        by=[score_col, "_coco_sheet_order"],
+        ascending=[False, True],
+        na_position="last",
+        kind="mergesort",
+    )
+    out = out.drop(columns=["_coco_sheet_order"])
+    return out.reset_index(drop=True)
+
+
 def build_finalized_records(
     excel_records: list[dict[str, Any]],
     scoring_rows: list[dict[str, Any]],
@@ -214,8 +246,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Build finalized CoCo Excel with all source columns plus "
-            "'CoCo Score Overall', rubric breakdown in 'CoCo Score', "
-            "'CoCo Rank', and 'CoCo Reason'."
+            "'CoCo Score Overall', rubric breakdown in 'CoCo Score', tier in 'CoCo Rank', "
+            "and 'CoCo Reason'. Rows are ordered by decreasing overall score (blank scores last)."
         )
     )
     parser.add_argument(
@@ -270,7 +302,10 @@ def main() -> None:
 
     output_path = Path(args.output_excel)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(finalized_records).to_excel(output_path, index=False)
+    df = pd.DataFrame(finalized_records)
+    df = reorder_dataframe_columns(df)
+    df = sort_finalized_by_overall_score_desc(df)
+    df.to_excel(output_path, index=False)
 
     print(f"Source rows: {len(excel_records)}")
     print(f"Scoring rows: {len(scoring_rows)}")
