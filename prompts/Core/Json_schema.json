@@ -2,34 +2,41 @@
   "company_name": "",
   "ticker": "",
   "overall_score": 0,
-  "tier": "",
+  "tier": "Strong",
   "tier_justification": "",
   "criteria_scores": [
     {
       "criteria": "Business Model & Activities",
       "max_score": 40,
       "score": 0,
-      "reason": ""
+      "reason": "",
+      "evidence_strength": "high"
     },
     {
       "criteria": "Strategic & Sector Alignment",
       "max_score": 25,
       "score": 0,
-      "reason": ""
+      "reason": "",
+      "evidence_strength": "high"
     },
     {
       "criteria": "Scale & Infrastructure Intensity",
       "max_score": 20,
       "score": 0,
-      "reason": ""
+      "reason": "",
+      "evidence_strength": "high"
     },
     {
       "criteria": "Geography Relevance",
       "max_score": 15,
       "score": 0,
-      "reason": ""
+      "reason": "",
+      "evidence_strength": "high"
     }
   ],
-  "key_differences_vs_target": [],
-  "confidence": 0.0
+  "key_differences_vs_target": [
+    "Different end-market concentration and customer mix."
+  ],
+  "confidence": "medium",
+  "rubric_version": "v2_banded_strict_1"
 }

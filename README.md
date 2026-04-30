@@ -54,7 +54,7 @@ This is an AI-assisted workflow, not full automation of analyst judgment.
 | `prompts/Core/compare_prompt.txt` | Master prompt + JSON schema (incl. `tier_justification`) |
 | `prompts/Target Company/target_company_greenko.txt` | Target company reference |
 | `secrets/scoring_config.example.json` | Example API config (safe to commit) |
-| `secrets/scoring_config.json` | **Your** API key + model (**gitignored** — create locally) |
+| `secrets/scoring_config.json` | **Your** API key + model + determinism options (**gitignored** — create locally) |
 | `data/cleaned/coco_candidates_all_columns.json` | Preprocessed candidates |
 | `data/output/prompt_runs/coco_prompt_payloads.jsonl` | One prompt row per candidate |
 | `data/output/prompt_runs/prompts_txt/` | Optional per-company prompt snapshots |
@@ -69,11 +69,20 @@ Create `secrets/scoring_config.json` (copy from `secrets/scoring_config.example.
 ```json
 {
   "api_key": "YOUR_OPENAI_API_KEY",
-  "model": "gpt-4o-mini"
+  "model": "gpt-4o-mini-2024-07-18",
+  "temperature": 0.0,
+  "top_p": 1.0,
+  "frequency_penalty": 0.0,
+  "presence_penalty": 0.0,
+  "seed": 42,
+  "require_snapshot_model": true,
+  "enforce_response_model_match": true
 }
 ```
 
-Precedence: **`--api-key` / `--model` CLI** → **config file** → **`OPENAI_API_KEY` env** → default model `gpt-4o-mini` if model omitted.
+Precedence: **CLI args** (e.g. `--api-key`, `--model`, `--temperature`) → **config file** (`secrets/scoring_config.json`) → **env** (`OPENAI_API_KEY` for key only) → internal defaults.
+
+Tip: to disable a configured seed from CLI, pass `--seed -1`.
 
 Do not commit `secrets/scoring_config.json`; it is listed in `.gitignore`.
 
@@ -85,6 +94,12 @@ From project root.
 
 ```bash
 python src/preprocessing/excel_json.py
+```
+
+For repeated-run reproducibility on the same CapIQ layout, pin the header row:
+
+```bash
+python src/preprocessing/excel_json.py --header-row 0
 ```
 
 ### 2) Build prompts for all candidates
@@ -107,7 +122,42 @@ Pilot first (e.g. 5 companies):
 python src/scoring/run_score_batch.py --max-rows 5 --output-jsonl data/output/scoring_runs/coco_scored_smoke5.jsonl
 ```
 
-Useful flags: `--config`, `--model`, `--sleep-seconds`, `--max-retries`, `--timeout-seconds`. On **401/403**, the batch **stops early** so a bad key does not burn through the whole list.
+Useful flags: `--config`, `--model`, `--temperature`, `--top-p`, `--frequency-penalty`, `--presence-penalty`, `--sleep-seconds`, `--max-retries`, `--timeout-seconds`, `--seed`, `--require-snapshot-model`, `--enforce-response-model-match`.
+
+For stronger reproducibility (via config or CLI), keep:
+
+- `--temperature 0.0`
+- `--top-p 1.0`
+- `--frequency-penalty 0.0`
+- `--presence-penalty 0.0`
+- a date-pinned model name (e.g. `gpt-4o-mini-2024-07-18`)
+- `--require-snapshot-model`
+- `--enforce-response-model-match`
+
+On **401/403**, the batch **stops early** so a bad key does not burn through the whole list.
+
+#### Scoring validation and error behavior
+
+`run_score_batch.py` now validates parsed model JSON against the rubric before marking a row as successful.
+
+Validation checks include:
+
+- Exact criterion list/order and expected `max_score`
+- Allowed score bands per criterion
+- `overall_score` equals the sum of criteria
+- Tier consistency with score (`Strong` / `Median` / `Weak`)
+- `key_differences_vs_target` must have 1-3 non-empty strings
+- `confidence` must be `high` / `medium` / `low` and follow deterministic mapping
+- Low-evidence rule: if 2+ criteria are `evidence_strength = low`, confidence cannot be `high`, and `tier_justification` must mention `limited evidence`
+
+What happens when validation fails:
+
+- The row is retried up to `--max-retries` (default: `3`)
+- If a retry passes validation, row status is `ok`
+- If all retries fail, row status is `error` and the validation reason is written to the `error` field
+- Batch continues to the next row (except auth failures `401/403`, which stop early)
+
+Tip: after a run, filter rows where `status != "ok"` and inspect the `error` text first; it explains exactly which rule was violated.
 
 ### 4) Build finalized Excel
 
@@ -138,14 +188,15 @@ The UI uploads your CapIQ file into a **temporary session folder**, runs steps 1
 ## Important Notes
 
 - One prompt template for all candidates; only candidate content changes.
-- Each scoring JSONL line includes: `prompt_text`, `model_output_text`, `parsed_output`, `raw_api_response`, `status`, `error`.
+- Each scoring JSONL line includes: `prompt_text`, `model_output_text`, `parsed_output`, `raw_api_response`, `model`, `response_model`, `status`, `error`.
+- A row can have `status = error` even with valid JSON text if rubric validation fails (schema/rule mismatch).
 - For cost control, prefer **`gpt-4o-mini`** and **`--max-rows`** for pilots; long prompts (target + business description) dominate token usage.
 
 ## What Has Been Done (highlights)
 
 - End-to-end path: **CapIQ Excel → JSON → prompts JSONL → OpenAI scoring JSONL → finalized Excel** with numeric score, score breakdown, rank, and audit reason columns.
 - **Secrets config**: `secrets/scoring_config.json` for API key + model choice; example file for onboarding; gitignore on the real file.
-- **Scoring runner** (`run_score_batch.py`): optional `--max-rows`, auth early-stop on 401/403, end-of-run summary (`ok` / `errors` / `parsed_json_ok`), config + env + CLI resolution.
+- **Scoring runner** (`run_score_batch.py`): optional `--max-rows`, auth early-stop on 401/403, end-of-run summary (`ok` / `errors` / `parsed_json_ok`), config + env + CLI resolution, plus strict rubric validation with retry-on-failure per row.
 - **Post-processing** (`build_final_excel.py`): all source columns + `CoCo Score Overall`, `CoCo Score` (criteria breakdown), `CoCo Rank`, `CoCo Reason` (per-criterion reasons plus `tier_justification`, two paragraphs when both exist); rows sorted descending by overall score.
 - **Streamlit wrapper** (`streamlit_app/app.py`): optional GUI for non-technical users; same pipeline, session-scratch workspace.
 - **Prompt**: JSON schema includes **`tier_justification`** for short audit narrative; per-criterion `reason` fields retained and merged into `CoCo Reason` as described above.
@@ -154,7 +205,7 @@ The UI uploads your CapIQ file into a **temporary session folder**, runs steps 1
 ## Suggested Next Steps
 
 1. Run full scoring on all candidates, then review rows with `status != ok` or missing `parsed_output`.
-2. Add optional **validation** post-step (e.g. `overall_score` vs sum of criteria, tier vs score bands) and surface flags in Excel.
+2. Optional: add a "validation flag" column in final Excel to surface `status/error` for non-technical reviewers.
 3. Optional: trim target text or cap business-description length for lower API cost once rubric is stable.
 
 ## Resume Prompt (for next chat)

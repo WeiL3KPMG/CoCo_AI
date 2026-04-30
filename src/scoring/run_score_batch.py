@@ -1,11 +1,264 @@
 import argparse
+from collections import Counter
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+
+MODEL_SNAPSHOT_PATTERN = re.compile(r".*-\d{4}-\d{2}-\d{2}$")
+EXPECTED_CRITERIA = [
+    ("Business Model & Activities", 40, {0, 10, 20, 30, 40}),
+    ("Strategic & Sector Alignment", 25, {0, 6, 12, 18, 25}),
+    ("Scale & Infrastructure Intensity", 20, {0, 5, 10, 15, 20}),
+    ("Geography Relevance", 15, {0, 5, 10, 15}),
+]
+ALLOWED_TIERS = {"Strong", "Median", "Weak"}
+ALLOWED_CONFIDENCE = {"high", "medium", "low"}
+ALLOWED_EVIDENCE_STRENGTH = {"high", "medium", "low"}
+
+
+def is_snapshot_model_name(model: str) -> bool:
+    """Return True when model name appears date-pinned (e.g. gpt-4o-mini-2024-07-18)."""
+    return bool(MODEL_SNAPSHOT_PATTERN.fullmatch(model.strip()))
+
+
+def coerce_config_bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    raise ValueError(f"Invalid boolean config value: {value!r}")
+
+
+def coerce_config_float(value: Any, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid float config value: {value!r}") from exc
+
+
+def coerce_config_int(value: Any, default: int | None) -> int | None:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid int config value: {value!r}") from exc
+
+
+def _coerce_int_like(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _extract_borderline_count(parsed_output: dict[str, Any]) -> int:
+    top_level = parsed_output.get("borderline_decisions_count")
+    top_level_int = _coerce_int_like(top_level)
+    if top_level_int is not None and top_level_int >= 0:
+        return top_level_int
+
+    criteria_scores = parsed_output.get("criteria_scores")
+    if not isinstance(criteria_scores, list):
+        return 0
+
+    count = 0
+    for item in criteria_scores:
+        if isinstance(item, dict) and item.get("borderline_decision") is True:
+            count += 1
+    return count
+
+
+def _mentions_limited_evidence(text: str) -> bool:
+    normalized = text.strip().lower()
+    if not normalized:
+        return False
+    patterns = (
+        "limited evidence",
+        "lack of evidence",
+        "insufficient evidence",
+        "sparse evidence",
+        "evidence is limited",
+        "evidence was limited",
+        "evidence is sparse",
+        "absence of relevant evidence",
+        "missing evidence",
+    )
+    return any(p in normalized for p in patterns)
+
+
+def classify_error_reason(error_message: str | None) -> str:
+    if not error_message:
+        return "unknown"
+    msg = error_message.strip()
+    if msg.startswith("HTTPError "):
+        code = msg.split(":", 1)[0].replace("HTTPError ", "").strip()
+        return f"http_{code}"
+    if msg.startswith("TimeoutError"):
+        return "timeout"
+    if "Rubric validation failed" in msg:
+        return "rubric_validation_failed"
+    if msg.startswith("ValueError"):
+        return "value_error"
+    if msg.startswith("URLError"):
+        return "url_error"
+    if ":" in msg:
+        return msg.split(":", 1)[0].strip().lower()
+    return "other_error"
+
+
+def validate_parsed_output(parsed_output: dict[str, Any]) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    criteria_scores = parsed_output.get("criteria_scores")
+    if not isinstance(criteria_scores, list):
+        return ["criteria_scores must be a list."], warnings
+    if len(criteria_scores) != len(EXPECTED_CRITERIA):
+        errors.append(
+            f"criteria_scores must contain exactly {len(EXPECTED_CRITERIA)} items."
+        )
+        return errors, warnings
+
+    total_score = 0
+    evidence_levels: list[str] = []
+    for idx, (expected_name, expected_max, allowed_scores) in enumerate(
+        EXPECTED_CRITERIA
+    ):
+        item = criteria_scores[idx]
+        if not isinstance(item, dict):
+            errors.append(f"criteria_scores[{idx}] must be an object.")
+            continue
+
+        actual_name = str(item.get("criteria", "")).strip()
+        if actual_name != expected_name:
+            errors.append(
+                f"criteria_scores[{idx}].criteria must be '{expected_name}' "
+                f"(found '{actual_name}')."
+            )
+
+        max_score = _coerce_int_like(item.get("max_score"))
+        if max_score != expected_max:
+            errors.append(
+                f"criteria_scores[{idx}].max_score must be {expected_max}."
+            )
+
+        score = _coerce_int_like(item.get("score"))
+        if score is None:
+            errors.append(f"criteria_scores[{idx}].score must be an integer.")
+        else:
+            if score not in allowed_scores:
+                allowed = ", ".join(str(v) for v in sorted(allowed_scores))
+                errors.append(
+                    f"criteria_scores[{idx}].score={score} is invalid; allowed values: {allowed}."
+                )
+            total_score += score
+
+        reason = str(item.get("reason", "")).strip()
+        if not reason:
+            errors.append(f"criteria_scores[{idx}].reason must be non-empty.")
+
+        evidence = str(item.get("evidence_strength", "")).strip().lower()
+        if evidence not in ALLOWED_EVIDENCE_STRENGTH:
+            errors.append(
+                f"criteria_scores[{idx}].evidence_strength must be one of "
+                f"{sorted(ALLOWED_EVIDENCE_STRENGTH)}."
+            )
+        else:
+            evidence_levels.append(evidence)
+
+    overall_score = _coerce_int_like(parsed_output.get("overall_score"))
+    if overall_score is None:
+        errors.append("overall_score must be an integer.")
+    elif overall_score != total_score:
+        errors.append(
+            f"overall_score ({overall_score}) must equal sum(criteria_scores) ({total_score})."
+        )
+
+    tier = str(parsed_output.get("tier", "")).strip()
+    if tier not in ALLOWED_TIERS:
+        errors.append(f"tier must be one of {sorted(ALLOWED_TIERS)}.")
+    elif overall_score is not None:
+        expected_tier = (
+            "Strong" if overall_score >= 70 else "Median" if overall_score >= 40 else "Weak"
+        )
+        if tier != expected_tier:
+            errors.append(
+                f"tier '{tier}' does not match overall_score {overall_score} "
+                f"(expected '{expected_tier}')."
+            )
+
+    key_differences = parsed_output.get("key_differences_vs_target")
+    if not isinstance(key_differences, list):
+        errors.append("key_differences_vs_target must be a list.")
+    else:
+        if not (1 <= len(key_differences) <= 3):
+            errors.append("key_differences_vs_target must contain 1-3 items.")
+        for idx, item in enumerate(key_differences):
+            if not isinstance(item, str) or not item.strip():
+                errors.append(
+                    f"key_differences_vs_target[{idx}] must be a non-empty string."
+                )
+
+    confidence = str(parsed_output.get("confidence", "")).strip().lower()
+    if confidence not in ALLOWED_CONFIDENCE:
+        errors.append(
+            f"confidence must be one of {sorted(ALLOWED_CONFIDENCE)}."
+        )
+
+    if evidence_levels:
+        low_count = sum(1 for e in evidence_levels if e == "low")
+        medium_count = sum(1 for e in evidence_levels if e == "medium")
+        high_count = sum(1 for e in evidence_levels if e == "high")
+        borderline_count = _extract_borderline_count(parsed_output)
+
+        expected_confidence = "medium"
+        if (
+            low_count >= 2
+            or borderline_count >= 2
+            or (low_count + medium_count) >= 3
+        ):
+            expected_confidence = "low"
+        elif high_count >= 3 and borderline_count == 0 and medium_count <= 1:
+            expected_confidence = "high"
+
+        if confidence in ALLOWED_CONFIDENCE and confidence != expected_confidence:
+            warnings.append(
+                f"confidence '{confidence}' violates deterministic mapping "
+                f"(expected '{expected_confidence}')."
+            )
+
+        if low_count >= 2:
+            if confidence == "high":
+                errors.append(
+                    "confidence cannot be 'high' when 2+ criteria have evidence_strength='low'."
+                )
+            tier_justification = str(parsed_output.get("tier_justification", ""))
+            if not _mentions_limited_evidence(tier_justification):
+                warnings.append(
+                    "tier_justification must mention limited/insufficient evidence when 2+ criteria are low evidence."
+                )
+
+    return errors, warnings
 
 
 def load_runtime_config(path: Path) -> dict[str, Any]:
@@ -63,14 +316,24 @@ def call_openai_chat(
     api_key: str,
     model: str,
     prompt_text: str,
+    temperature: float,
+    top_p: float,
+    frequency_penalty: float,
+    presence_penalty: float,
+    seed: int | None,
     timeout_seconds: int = 120,
 ) -> tuple[str, dict[str, Any]]:
     url = "https://api.openai.com/v1/chat/completions"
     payload = {
         "model": model,
-        "temperature": 0.0,
+        "temperature": temperature,
+        "top_p": top_p,
+        "frequency_penalty": frequency_penalty,
+        "presence_penalty": presence_penalty,
         "messages": [{"role": "user", "content": prompt_text}],
     }
+    if seed is not None:
+        payload["seed"] = seed
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url=url,
@@ -104,7 +367,20 @@ def run_batch(
     max_retries: int,
     timeout_seconds: int,
     max_rows: int | None,
+    temperature: float,
+    top_p: float,
+    frequency_penalty: float,
+    presence_penalty: float,
+    seed: int | None,
+    require_snapshot_model: bool,
+    enforce_response_model_match: bool,
 ) -> None:
+    if require_snapshot_model and not is_snapshot_model_name(model):
+        raise ValueError(
+            "Model must be snapshot/date-pinned when --require-snapshot-model is set. "
+            f"Received: {model!r}. Example: gpt-4o-mini-2024-07-18"
+        )
+
     rows = load_prompt_rows(prompts_jsonl)
     if max_rows is not None:
         rows = rows[: max(0, max_rows)]
@@ -115,6 +391,8 @@ def run_batch(
     success_count = 0
     error_count = 0
     parsed_json_count = 0
+    error_reason_counts: Counter[str] = Counter()
+    validation_warning_count = 0
     for idx, row in enumerate(rows, start=1):
         prompt_text = str(row.get("prompt_text", "")).strip()
         if not prompt_text:
@@ -127,6 +405,7 @@ def run_batch(
         model_output_text = ""
         raw_api_response: dict[str, Any] = {}
         parsed_output: dict[str, Any] | None = None
+        validation_warnings: list[str] = []
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -134,9 +413,30 @@ def run_batch(
                     api_key=api_key,
                     model=model,
                     prompt_text=prompt_text,
+                    temperature=temperature,
+                    top_p=top_p,
+                    frequency_penalty=frequency_penalty,
+                    presence_penalty=presence_penalty,
+                    seed=seed,
                     timeout_seconds=timeout_seconds,
                 )
+                response_model = str(raw_api_response.get("model", "")).strip()
+                if (
+                    enforce_response_model_match
+                    and response_model
+                    and response_model != model
+                ):
+                    raise ValueError(
+                        "Response model mismatch: "
+                        f"requested={model!r}, response={response_model!r}"
+                    )
                 parsed_output = extract_json_object(model_output_text)
+                if parsed_output is not None:
+                    validation_errors, validation_warnings = validate_parsed_output(parsed_output)
+                    if validation_errors:
+                        raise ValueError(
+                            "Rubric validation failed: " + " | ".join(validation_errors)
+                        )
                 error_message = None
                 break
             except urllib.error.HTTPError as exc:
@@ -157,11 +457,13 @@ def run_batch(
             "company_name": row.get("company_name"),
             "ticker": row.get("ticker"),
             "model": model,
+            "response_model": str(raw_api_response.get("model", "")).strip(),
             "status": "ok" if error_message is None else "error",
             "error": error_message,
             "prompt_text": prompt_text,
             "model_output_text": model_output_text,
             "parsed_output": parsed_output,
+            "validation_warnings": validation_warnings,
             "raw_api_response": raw_api_response,
         }
 
@@ -173,8 +475,11 @@ def run_batch(
             success_count += 1
             if parsed_output is not None:
                 parsed_json_count += 1
+            if validation_warnings:
+                validation_warning_count += 1
         else:
             error_count += 1
+            error_reason_counts[classify_error_reason(error_message)] += 1
         print(f"[{idx}/{total}] {row.get('company_name', row.get('candidate_key'))}: {status}")
 
         if error_message is not None and (
@@ -194,8 +499,13 @@ def run_batch(
         "Summary: "
         f"ok={success_count}, "
         f"errors={error_count}, "
-        f"parsed_json_ok={parsed_json_count}"
+        f"parsed_json_ok={parsed_json_count}, "
+        f"ok_with_validation_warnings={validation_warning_count}"
     )
+    if error_reason_counts:
+        print("Error breakdown by type:")
+        for reason, count in error_reason_counts.most_common():
+            print(f"  - {reason}: {count}")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -221,6 +531,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--model",
         default="",
         help="OpenAI chat model.",
+    )
+    parser.add_argument(
+        "--require-snapshot-model",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Require a date-pinned model name (e.g. gpt-4o-mini-2024-07-18) "
+            "to reduce model drift across runs."
+        ),
+    )
+    parser.add_argument(
+        "--enforce-response-model-match",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Fail a row if API response model differs from requested model.",
     )
     parser.add_argument(
         "--config",
@@ -249,6 +574,36 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="HTTP request timeout seconds.",
     )
     parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Sampling temperature (use 0.0 for determinism).",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=None,
+        help="Nucleus sampling parameter (keep 1.0 for determinism baseline).",
+    )
+    parser.add_argument(
+        "--frequency-penalty",
+        type=float,
+        default=None,
+        help="Frequency penalty (keep 0.0 for determinism baseline).",
+    )
+    parser.add_argument(
+        "--presence-penalty",
+        type=float,
+        default=None,
+        help="Presence penalty (keep 0.0 for determinism baseline).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional deterministic seed (if supported by the model/API). Use --seed -1 to disable config seed.",
+    )
+    parser.add_argument(
         "--max-rows",
         type=int,
         default=None,
@@ -274,6 +629,44 @@ def main() -> None:
         )
 
     model = args.model.strip() or str(config.get("model", "")).strip() or "gpt-4o-mini"
+    temperature = (
+        args.temperature
+        if args.temperature is not None
+        else coerce_config_float(config.get("temperature"), 0.0)
+    )
+    top_p = args.top_p if args.top_p is not None else coerce_config_float(config.get("top_p"), 1.0)
+    frequency_penalty = (
+        args.frequency_penalty
+        if args.frequency_penalty is not None
+        else coerce_config_float(config.get("frequency_penalty"), 0.0)
+    )
+    presence_penalty = (
+        args.presence_penalty
+        if args.presence_penalty is not None
+        else coerce_config_float(config.get("presence_penalty"), 0.0)
+    )
+    require_snapshot_model = (
+        args.require_snapshot_model
+        if args.require_snapshot_model is not None
+        else coerce_config_bool(config.get("require_snapshot_model"), False)
+    )
+    enforce_response_model_match = (
+        args.enforce_response_model_match
+        if args.enforce_response_model_match is not None
+        else coerce_config_bool(config.get("enforce_response_model_match"), False)
+    )
+    seed = args.seed
+    if seed is None:
+        seed = coerce_config_int(config.get("seed"), None)
+    if seed == -1:
+        seed = None
+
+    if not is_snapshot_model_name(model):
+        print(
+            "Warning: model name is not date-pinned. "
+            "For stronger reproducibility use a snapshot model name "
+            "(e.g. gpt-4o-mini-2024-07-18)."
+        )
 
     run_batch(
         prompts_jsonl=Path(args.prompts_jsonl),
@@ -284,6 +677,13 @@ def main() -> None:
         max_retries=args.max_retries,
         timeout_seconds=args.timeout_seconds,
         max_rows=args.max_rows,
+        temperature=temperature,
+        top_p=top_p,
+        frequency_penalty=frequency_penalty,
+        presence_penalty=presence_penalty,
+        seed=seed,
+        require_snapshot_model=require_snapshot_model,
+        enforce_response_model_match=enforce_response_model_match,
     )
 
 

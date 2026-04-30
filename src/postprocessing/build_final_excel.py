@@ -8,6 +8,7 @@ import pandas as pd
 COCO_COLUMNS_ORDER = [
     "CoCo Score Overall",
     "CoCo Score",
+    "CoCo Evidence",
     "CoCo Rank",
     "CoCo Reason",
 ]
@@ -133,6 +134,40 @@ def build_score_breakdown(parsed: dict[str, Any]) -> str | None:
     )
 
 
+def build_evidence_summary(
+    parsed: dict[str, Any], scoring_row: dict[str, Any]
+) -> str | None:
+    """Format evidence_strength and confidence into a compact audit string."""
+    criteria_scores = parsed.get("criteria_scores")
+    parts: list[str] = []
+
+    confidence = parsed.get("confidence")
+    if isinstance(confidence, str) and confidence.strip():
+        parts.append(f"Confidence: {confidence.strip()}")
+
+    strength_parts: list[str] = []
+    if isinstance(criteria_scores, list):
+        for item in criteria_scores:
+            if not isinstance(item, dict):
+                continue
+            criteria = str(item.get("criteria", "")).strip()
+            strength = str(item.get("evidence_strength", "")).strip()
+            if criteria and strength:
+                strength_parts.append(
+                    f"{canonical_criteria_label(criteria)}: {strength}"
+                )
+    if strength_parts:
+        parts.append("Evidence Strength: " + "; ".join(strength_parts))
+
+    warnings = scoring_row.get("validation_warnings")
+    if isinstance(warnings, list):
+        warning_text = [str(w).strip() for w in warnings if str(w).strip()]
+        if warning_text:
+            parts.append("Validation Warnings: " + " | ".join(warning_text))
+
+    return " | ".join(parts) if parts else None
+
+
 def map_tier_to_rank(tier: Any, median_label: str) -> str | None:
     if not isinstance(tier, str):
         return None
@@ -224,17 +259,20 @@ def build_finalized_records(
 
         overall_numeric: Any = None
         score_breakdown: str | None = None
+        evidence_summary: str | None = None
         rank: str | None = None
         reason: str | None = None
         if isinstance(parsed, dict):
             overall_numeric = parsed.get("overall_score")
             score_breakdown = build_score_breakdown(parsed)
+            evidence_summary = build_evidence_summary(parsed=parsed, scoring_row=scoring_row)
             rank = map_tier_to_rank(parsed.get("tier"), median_label=median_label)
             reason = build_coco_reason(parsed=parsed, rank=rank)
 
         # Numeric total for sorting/filtering; breakdown is human-readable rubric lines.
         out["CoCo Score Overall"] = overall_numeric
         out["CoCo Score"] = score_breakdown
+        out["CoCo Evidence"] = evidence_summary
         out["CoCo Rank"] = rank
         out["CoCo Reason"] = reason
         finalized.append(out)

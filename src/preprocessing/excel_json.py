@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -29,7 +30,7 @@ def normalize_value(value: Any) -> Any:
 
 def read_sheet_as_records(
     excel_path: Path, sheet_name: str, header_row: int | None = None
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], int]:
     """
     Read one sheet and convert each row to a JSON record.
     Keeps all columns exactly as they appear in the sheet.
@@ -49,7 +50,7 @@ def read_sheet_as_records(
         record = {col: normalize_value(row[col]) for col in data_df.columns}
         records.append(record)
 
-    return records
+    return records, effective_header
 
 
 def export_excel_to_json(
@@ -58,16 +59,20 @@ def export_excel_to_json(
     sheet_name: str = "Screening",
     header_row: int | None = None,
 ) -> None:
-    records = read_sheet_as_records(
+    records, effective_header = read_sheet_as_records(
         excel_path=input_file,
         sheet_name=sheet_name,
         header_row=header_row,
     )
 
+    source_sha256 = hashlib.sha256(input_file.read_bytes()).hexdigest()
+
     output_file.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "source_file": str(input_file),
+        "source_sha256": source_sha256,
         "sheet_name": sheet_name,
+        "header_row_used": effective_header,
         "record_count": len(records),
         "records": records,
     }
