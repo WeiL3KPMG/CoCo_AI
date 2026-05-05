@@ -20,6 +20,23 @@ EXPECTED_CRITERIA = [
 ALLOWED_TIERS = {"Strong", "Median", "Weak"}
 ALLOWED_CONFIDENCE = {"high", "medium", "low"}
 ALLOWED_EVIDENCE_STRENGTH = {"high", "medium", "low"}
+REQUIRED_TOP_LEVEL_KEYS = (
+    "company_name",
+    "ticker",
+    "overall_score",
+    "tier",
+    "tier_justification",
+    "criteria_scores",
+    "key_differences_vs_target",
+    "confidence",
+)
+REQUIRED_CRITERIA_KEYS = (
+    "criteria",
+    "max_score",
+    "score",
+    "reason",
+    "evidence_strength",
+)
 
 
 def is_snapshot_model_name(model: str) -> bool:
@@ -115,6 +132,8 @@ def classify_error_reason(error_message: str | None) -> str:
         return f"http_{code}"
     if msg.startswith("TimeoutError"):
         return "timeout"
+    if "JSON integrity failed" in msg:
+        return "json_integrity_failed"
     if "Rubric validation failed" in msg:
         return "rubric_validation_failed"
     if msg.startswith("ValueError"):
@@ -124,6 +143,34 @@ def classify_error_reason(error_message: str | None) -> str:
     if ":" in msg:
         return msg.split(":", 1)[0].strip().lower()
     return "other_error"
+
+
+def check_json_structural_integrity(
+    parsed_output: dict[str, Any] | None,
+) -> tuple[bool, list[str]]:
+    errors: list[str] = []
+    if not isinstance(parsed_output, dict):
+        return False, ["Model output is not a valid JSON object."]
+
+    for key in REQUIRED_TOP_LEVEL_KEYS:
+        if key not in parsed_output:
+            errors.append(f"Missing top-level key: {key}")
+
+    criteria_scores = parsed_output.get("criteria_scores")
+    if not isinstance(criteria_scores, list):
+        errors.append("criteria_scores must be a list.")
+    else:
+        if not criteria_scores:
+            errors.append("criteria_scores cannot be empty.")
+        for idx, item in enumerate(criteria_scores):
+            if not isinstance(item, dict):
+                errors.append(f"criteria_scores[{idx}] must be an object.")
+                continue
+            for key in REQUIRED_CRITERIA_KEYS:
+                if key not in item:
+                    errors.append(f"criteria_scores[{idx}] missing key: {key}")
+
+    return len(errors) == 0, errors
 
 
 def validate_parsed_output(parsed_output: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -405,6 +452,8 @@ def run_batch(
         model_output_text = ""
         raw_api_response: dict[str, Any] = {}
         parsed_output: dict[str, Any] | None = None
+        json_integrity_ok = False
+        json_integrity_errors: list[str] = []
         validation_warnings: list[str] = []
 
         for attempt in range(1, max_retries + 1):
@@ -430,13 +479,24 @@ def run_batch(
                         "Response model mismatch: "
                         f"requested={model!r}, response={response_model!r}"
                     )
-                parsed_output = extract_json_object(model_output_text)
+                parsed_candidate = extract_json_object(model_output_text)
+                json_integrity_ok, json_integrity_errors = check_json_structural_integrity(
+                    parsed_candidate
+                )
+                if not json_integrity_ok:
+                    raise ValueError(
+                        "JSON integrity failed: " + " | ".join(json_integrity_errors)
+                    )
+
+                parsed_output = parsed_candidate
                 if parsed_output is not None:
-                    validation_errors, validation_warnings = validate_parsed_output(parsed_output)
+                    validation_errors, validation_warnings = validate_parsed_output(
+                        parsed_output
+                    )
                     if validation_errors:
-                        raise ValueError(
-                            "Rubric validation failed: " + " | ".join(validation_errors)
-                        )
+                        validation_warnings = [
+                            f"Validation Error: {msg}" for msg in validation_errors
+                        ] + validation_warnings
                 error_message = None
                 break
             except urllib.error.HTTPError as exc:
@@ -460,6 +520,8 @@ def run_batch(
             "response_model": str(raw_api_response.get("model", "")).strip(),
             "status": "ok" if error_message is None else "error",
             "error": error_message,
+            "json_integrity_ok": json_integrity_ok,
+            "json_integrity_errors": json_integrity_errors,
             "prompt_text": prompt_text,
             "model_output_text": model_output_text,
             "parsed_output": parsed_output,

@@ -6,7 +6,7 @@ Scoring objective:
 - Score similarity to the target company (not absolute company quality).
 - Use only evidence in the provided target text and candidate fields.
 - Lower-band decision logic:
-  - If no criterion-relevant evidence exists, assign score `0` and set `evidence_strength` to `low`.
+  - If no criterion-relevant evidence exists, set `evidence_strength` to `low`.
   - If evidence supports two adjacent allowed bands, assign the LOWER of those two bands and state the missing factor in the reason.
 
 Critical discipline rules:
@@ -166,47 +166,7 @@ Validation checklist before final output:
 - Output is a valid JSON object only.
 
 Target Company Reference:
-TARGET COMPANY PROFILE – REFERENCE FOR COCO COMPARISON
-
-Company Name:
-Greenko Group
-
-Headquarters / Primary Geography:
-India (operations across multiple Indian states)
-
-Sector:
-Renewable Energy and Energy Transition Infrastructure
-
-Core Business Description:
-Greenko Group is a renewable energy infrastructure company focused on developing, owning, and operating large-scale renewable power assets in India. Its portfolio spans wind, solar, and hydro generation, with a strategic emphasis on integrating energy storage to deliver firm and dispatchable renewable power. The company positions itself as an energy transition and decarbonization solutions provider rather than a pure power generator.
-
-Business Segments:
-- Wind power generation
-- Solar power generation
-- Hydro power generation
-- Energy storage (pumped storage and battery-based solutions)
-- Emerging green hydrogen and green ammonia initiatives
-
-Business Model:
-B2B, asset-heavy infrastructure model. Greenko develops and operates renewable and storage assets and supplies power and decarbonization solutions primarily to industrial, commercial, and grid counterparties. Revenue is driven by long-term power offtake, contracts, and structured energy solutions rather than retail sales.
-
-Scale Indicators (Approximate):
-- Installed renewable capacity: ~7.5 GW
-- Energy storage projects under development: 50 GWh near-term, scaling to ~100 GWh
-- Geographic footprint: Multi-state presence within India
-
-Strategic Positioning:
-- Focus on dispatchable renewable energy through integrated storage
-- Positioned as a deep decarbonization and energy transition platform
-- Emphasis on reliability and grid-scale solutions, not just generation capacity
-
-Keywords for AI Comparison:
-renewable energy, wind, solar, hydro, energy storage, pumped storage, grid-scale, dispatchable power, energy transition, decarbonization, infrastructure, B2B energy solutions
+{PASTE TARGET TXT HERE}
 
 Candidate Company:
-{
-  "Company Name": "Eni S.p.A. (BIT:ENI)",
-  "Exchange:Ticker": "BIT:ENI",
-  "Industry Classifications": "Energy (Primary)",
-  "Business Description": "Eni S.p.A. operates as an integrated energy company in Italy, Other European Union, Rest of Europe, the United States, Asia, Africa, and internationally. The company engages in exploration, development, extracting, manufacturing, trading, and marketing crude oil and natural gas, oil-based fuels, chemical products, and gas-fired power, as well as energy products from renewable sources. The company operates through Exploration & Production; Global Gas & LNG Portfolio and Power; Refining and Chemicals; Enilive; Plenitude; and Corporate and Other Activities segments. The company engages in research, development, and production of oil, condensates, and natural gas. It is also involved in the supply and sale of wholesale natural gas through pipelines; electricity; and international transport, and purchase and marketing of liquefied natural gas. In addition, the company supplies bio-feedstock and crude oil; and stores, produces, distributes, and markets biofuels, oil products, biomethane, basic chemical and petrochemical products, intermediates, plastics and elastomers, and other chemicals, as well as provides smart mobility solutions and services. Further, the company engages in the retail marketing of gas, power, and related services; production and wholesale sale of electricity from renewable plants; and building and managing a network of charging points for electric vehicles. Eni S.p.A. was founded in 1953 and is headquartered in Rome, Italy."
-}
+{PASTE CANDIDATE JSON HERE}
