@@ -20,6 +20,12 @@ Scoring objective:
 - Do not require exact overlap across all dimensions. Public listed comparables are often broader, larger, more mature, more diversified, or geographically different from the target.
 - Penalize differences through lower criterion scores, but do not automatically classify a candidate as Weak solely because it is broader, larger, more mature, listed elsewhere, or not a pure-play version of the target.
 
+Primary-market comparability calibration (cross-sector, not target-specific):
+- This task supports practical primary-market valuation benchmarking, where exact business twins are often unavailable.
+- Explicit product/category adjacency should be rewarded even when sub-segment focus differs.
+- If both companies are explicitly in the same product family, technology family, or commercial category, do not treat sub-segment mismatch alone as fundamental non-comparability.
+- Non-pure-play public companies can still be valid comparables and can be Median when commercial overlap is meaningful.
+
 Comparable-company screening philosophy:
 - Apply moderate selectivity.
 - Be strict enough to reject companies with only superficial or unrelated sector labels.
@@ -33,7 +39,7 @@ Comparable-company screening philosophy:
     1) core product/service category,
     2) customer/end-market/use case,
     3) value-chain role / revenue model / go-to-market,
-    then the candidate should generally land in Median unless there is explicit evidence of fundamental non-comparability.
+    then the relevant criterion scores should generally be reviewed for possible upward adjustment before computing overall_score, unless there is explicit evidence of fundamental non-comparability.
   - Use Weak only when one or more of the following is true:
     a) both Core Business & Product Overlap and Customer, End-Market & Use-Case Alignment are 0; or
     b) three or more criteria are scored 0; or
@@ -66,6 +72,9 @@ Critical discipline rules:
 - Each criterion reason should be concise, typically 1-3 sentences, and include:
   - the strongest explicit evidence supporting the selected band; and
   - the key gap or difference when relevant.
+- Each criterion reason should follow this structure where possible:
+  - `Evidence: [explicit evidence from target and candidate]. Gap: [main limitation or difference, if relevant].`
+- The reason must be based only on the provided target text and candidate fields.
 - For score 0, clearly explain the non-overlap that makes comparability minimal for that criterion.
 - Do not infer geography solely from ticker, listing exchange, company name, or headquarters.
 - Do not infer scale from brand familiarity, reputation, listing status, market capitalization, or assumed market prominence unless explicitly stated in the input.
@@ -77,20 +86,27 @@ Critical discipline rules:
 - `company_name` and `ticker` must come from explicit candidate input only.
 - If `company_name` or `ticker` is absent, missing, null, or ambiguous in candidate input, output an empty string `""` (or `"unknown"`). Do not guess or infer identifiers.
 
-Deterministic self-check before final output (mandatory):
-1) Verify each criterion score is exactly in that criterion's allowed set.
-2) Recompute overall_score from the five criterion scores (exact sum).
-3) Reassign tier strictly from overall_score:
-   - Strong: 70-100
-   - Median: 40-69
-   - Weak: 0-39
-4) Apply Weak gate one final time:
-   - If candidate has explicit non-trivial overlap in at least two of:
-     (a) core product/service,
-     (b) customer/end-market/use case,
-     (c) value-chain/revenue/go-to-market,
-     then Weak should not be used unless there is explicit fundamental non-comparability.
-5) If any check fails, correct the JSON values before output.
+Deterministic scoring sequence:
+- First select the score band for each of the five criteria using only the allowed score values.
+- Then compute overall_score as the exact sum of the five criterion scores.
+- Then assign tier strictly from overall_score:
+  - Strong: 70-100
+  - Median: 40-69
+  - Weak: 0-39
+- Only after scores, overall_score, and tier are fixed, draft the criterion reasons, tier_justification, and key_differences_vs_target.
+- Do not revise scores while writing explanations unless the validation checklist reveals a rule violation.
+
+Weak gate application:
+- The Weak gate must not override the mechanical tier rule after overall_score is computed.
+- Apply the Weak gate before finalizing criterion scores.
+- If the candidate has explicit non-trivial overlap in at least two of:
+  1) core product/service category,
+  2) customer/end-market/use case,
+  3) value-chain role / revenue model / go-to-market,
+  then review whether the relevant criterion scores are too low.
+- If the evidence supports higher adjacent allowed bands, adjust the relevant criterion scores before computing overall_score.
+- After criterion scores are finalized, assign tier strictly from overall_score.
+- Do not manually change tier after overall_score is computed.
 
 Criterion 1: Core Business & Product Overlap
 Max score: 30
@@ -117,6 +133,10 @@ Band guidance:
 - 15: Meaningful product adjacency; candidate is not a direct twin but operates in a related product/service category that would reasonably be considered in public comparable-company screening.
 - 8: Limited product overlap, but some clear commercial or technology adjacency exists.
 - 0: No meaningful product/service overlap.
+
+Zero-score guardrail for Criterion 1:
+- If explicit evidence shows both companies operate in the same product family, technology-enabled product category, or commercially adjacent substitute category, score must be non-zero (typically 8, 15, or 23 depending on overlap depth).
+- Do not assign 0 to Criterion 1 solely because the candidate serves a different sub-segment, use case, or customer vertical within an otherwise related product category.
 
 Criterion 2: Customer, End-Market & Use-Case Alignment
 Max score: 20
@@ -237,25 +257,19 @@ Evidence strength rules:
 - medium: partial or indirect evidence supports the selected band.
 - low: sparse, ambiguous, or incomplete evidence; use for adjacent but underspecified cases.
 
-Borderline decision definition:
-- A criterion is borderline when available evidence could reasonably fit two adjacent allowed score bands.
-- Track borderline decisions internally for confidence calculation.
-- Do NOT output a borderline field.
-
 Confidence rules:
 - confidence must be exactly one of: high, medium, low.
-- Count internally:
+- Count:
   - low_count = number of criteria where evidence_strength = low
-  - borderline_count = number of criteria that are borderline decisions
   - high_count = number of criteria where evidence_strength = high
-- Apply confidence in this exact order (deterministic):
-  1) If low_count >= 2 OR borderline_count >= 2, set confidence = low.
-  2) Else if high_count >= 4 AND borderline_count = 0 AND low_count = 0, set confidence = high.
-  3) Else set confidence = medium.
+- Apply confidence in this exact order:
+  1) If low_count >= 2, confidence = low.
+  2) Else if high_count >= 4 and low_count = 0, confidence = high.
+  3) Else confidence = medium.
 
 Low-evidence aggregation rule:
 - If low_count >= 2:
-  - confidence must not be high; and
+  - confidence must be low; and
   - tier_justification must mention limited, sparse, or insufficient evidence.
 
 tier_justification rules:
@@ -279,7 +293,7 @@ Output JSON schema:
   "company_name": "",
   "ticker": "",
   "overall_score": 0,
-  "tier": "Strong",
+  "tier": "Weak",
   "tier_justification": "",
   "criteria_scores": [
     {
@@ -287,7 +301,7 @@ Output JSON schema:
       "max_score": 30,
       "score": 0,
       "reason": "",
-      "evidence_strength": "high"
+      "evidence_strength": "medium"
     },
     {
       "criteria": "Customer, End-Market & Use-Case Alignment",
@@ -308,14 +322,14 @@ Output JSON schema:
       "max_score": 15,
       "score": 0,
       "reason": "",
-      "evidence_strength": "low"
+      "evidence_strength": "medium"
     },
     {
       "criteria": "Geographic & Regulatory Market Relevance",
       "max_score": 15,
       "score": 0,
       "reason": "",
-      "evidence_strength": "high"
+      "evidence_strength": "medium"
     }
   ],
   "key_differences_vs_target": [
@@ -348,10 +362,10 @@ Validation checklist before final output:
 - key_differences_vs_target has 1-3 non-empty strings.
 - confidence is exactly one of: high, medium, low.
 - confidence follows the exact deterministic order:
-  1) low if low_count >= 2 OR borderline_count >= 2
-  2) else high if high_count >= 4 AND borderline_count = 0 AND low_count = 0
+  1) low if low_count >= 2
+  2) else high if high_count >= 4 AND low_count = 0
   3) else medium
-- If low_count >= 2, confidence is not high and tier_justification mentions limited, sparse, or insufficient evidence.
+- If low_count >= 2, tier_justification mentions limited, sparse, or insufficient evidence.
 - Reasons are concise and based only on provided evidence.
 - Geography is not inferred from ticker, listing exchange, company name, or headquarters alone.
 - Scale is not inferred from brand familiarity, listing status, market capitalization, or assumed reputation.

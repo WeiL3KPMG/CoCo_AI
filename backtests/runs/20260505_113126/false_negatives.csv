@@ -1,0 +1,129 @@
+dataset_file,sheet,ticker,predicted_tier,overall_score,status,error
+CoCo_examples.xlsx,Guangli,OM:XMR,Weak,38,ok,
+CoCo_examples.xlsx,Guangli,CNSX:ARWY,Weak,37,ok,
+CoCo_examples.xlsx,Guangli,NasdaqCM:WLDS,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 27278, Requested 6892. Please try again in 8.34s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,Guangli,SZSE:002241,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 27100, Requested 6703. Please try again in 7.606s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,SZSE:002154,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 26908, Requested 6744. Please try again in 7.304s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,SZSE:002029,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 26244, Requested 6789. Please try again in 6.066s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,SZSE:002485,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 26056, Requested 6662. Please try again in 5.436s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,SEHK:1234,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 25868, Requested 6714. Please try again in 5.164s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,BSE:532808,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 25696, Requested 6763. Please try again in 4.918s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,TWSE:1473,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 25522, Requested 6657. Please try again in 4.358s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,TSE:3205,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 25363, Requested 6702. Please try again in 4.13s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,SZSE:002269,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 25169, Requested 6680. Please try again in 3.698s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,KOSE:A005320,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 24991, Requested 6645. Please try again in 3.272s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,SEHK:844,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 24829, Requested 6982. Please try again in 3.622s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,SHSE:600398,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 24599, Requested 6691. Please try again in 2.58s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"
+CoCo_examples.xlsx,YBR,SEHK:2020,,,error,"HTTPError 429: {
+    ""error"": {
+        ""message"": ""Rate limit reached for gpt-4o in organization org-bKVZw1xHqk3RGK95nGxr42Yl on tokens per min (TPM): Limit 30000, Used 24287, Requested 6791. Please try again in 2.156s. Visit https://platform.openai.com/account/rate-limits to learn more."",
+        ""type"": ""tokens"",
+        ""param"": null,
+        ""code"": ""rate_limit_exceeded""
+    }
+}
+"

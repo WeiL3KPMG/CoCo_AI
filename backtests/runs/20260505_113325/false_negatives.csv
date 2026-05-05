@@ -1,0 +1,4 @@
+dataset_file,sheet,ticker,predicted_tier,overall_score,status,error
+CoCo_examples.xlsx,Guangli,OM:XMR,Weak,38,ok,
+CoCo_examples.xlsx,Guangli,CNSX:ARWY,Weak,37,ok,
+CoCo_examples.xlsx,Guangli,NasdaqCM:WLDS,Weak,37,ok,

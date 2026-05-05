@@ -1,0 +1,21 @@
+dataset_file,sheet,ticker,predicted_tier,overall_score,status,error
+CoCo_examples.xlsx,Guangli,NasdaqCM:VUZI,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,Guangli,SZSE:300793,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,Guangli,TPEX:4980,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,Guangli,OM:XMR,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,Guangli,NYSE:GRMN,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,Guangli,CNSX:ARWY,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,Guangli,NasdaqCM:WLDS,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,Guangli,SZSE:002241,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,SZSE:002154,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,SZSE:002029,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,SZSE:002485,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,SEHK:1234,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,BSE:532808,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,TWSE:1473,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,TSE:3205,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,SZSE:002269,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,KOSE:A005320,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,SEHK:844,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,SHSE:600398,,,error,Failed to parse model output as JSON object.
+CoCo_examples.xlsx,YBR,SEHK:2020,,,error,Failed to parse model output as JSON object.

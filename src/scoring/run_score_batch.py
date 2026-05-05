@@ -1,5 +1,7 @@
 import argparse
 from collections import Counter
+import copy
+import hashlib
 import json
 import os
 import re
@@ -37,6 +39,19 @@ REQUIRED_CRITERIA_KEYS = (
     "reason",
     "evidence_strength",
 )
+ALLOWED_SCORE_BANDS: dict[str, list[int]] = {
+    # v3 5-factor rubric
+    "Core Business & Product Overlap": [0, 8, 15, 23, 30],
+    "Customer, End-Market & Use-Case Alignment": [0, 5, 10, 15, 20],
+    "Value Chain, Revenue Model & Go-to-Market Similarity": [0, 5, 10, 15, 20],
+    "Operating Scale, Capability & Maturity": [0, 4, 8, 12, 15],
+    "Geographic & Regulatory Market Relevance": [0, 4, 8, 12, 15],
+    # legacy 4-factor rubric
+    "Business Model & Activities": [0, 10, 20, 30, 40],
+    "Strategic & Sector Alignment": [0, 6, 12, 18, 25],
+    "Scale & Infrastructure Intensity": [0, 5, 10, 15, 20],
+    "Geography Relevance": [0, 5, 10, 15],
+}
 
 
 def is_snapshot_model_name(model: str) -> bool:
@@ -86,6 +101,79 @@ def _coerce_int_like(value: Any) -> int | None:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return None
+
+
+def _tier_from_score(score: int) -> str:
+    if score >= 70:
+        return "Strong"
+    if score >= 40:
+        return "Median"
+    return "Weak"
+
+
+def _clamp_to_allowed_band(score: int, allowed: list[int]) -> int:
+    # Tie-breaker favors lower band when equidistant.
+    return min(
+        allowed,
+        key=lambda v: (abs(v - score), 0 if v <= score else 1, v),
+    )
+
+
+def normalize_parsed_output(
+    parsed_output: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    if not isinstance(parsed_output, dict):
+        return parsed_output, []
+
+    normalized = copy.deepcopy(parsed_output)
+    notes: list[str] = []
+    criteria_scores = normalized.get("criteria_scores")
+    if not isinstance(criteria_scores, list):
+        return normalized, notes
+
+    total = 0
+    saw_any_numeric = False
+    for idx, item in enumerate(criteria_scores):
+        if not isinstance(item, dict):
+            continue
+
+        criteria_name = str(item.get("criteria", "")).strip()
+        allowed = ALLOWED_SCORE_BANDS.get(criteria_name)
+        score_raw = _coerce_int_like(item.get("score"))
+
+        if allowed:
+            item["max_score"] = max(allowed)
+            if score_raw is None:
+                score = min(allowed)
+                item["score"] = score
+                notes.append(
+                    f"criteria_scores[{idx}] score missing/non-integer; defaulted to {score}."
+                )
+            elif score_raw not in allowed:
+                clamped = _clamp_to_allowed_band(score_raw, allowed)
+                item["score"] = clamped
+                notes.append(
+                    f"criteria_scores[{idx}] score {score_raw} clamped to {clamped}."
+                )
+            else:
+                item["score"] = score_raw
+            total += int(item["score"])
+            saw_any_numeric = True
+            continue
+
+        # Unknown criterion: keep current score if numeric for stable total recompute.
+        if score_raw is not None:
+            total += score_raw
+            saw_any_numeric = True
+
+    if saw_any_numeric:
+        normalized["overall_score"] = total
+        normalized["tier"] = _tier_from_score(total)
+        notes.append(
+            f"overall_score recomputed to {total}; tier recomputed to {normalized['tier']}."
+        )
+
+    return normalized, notes
 
 
 def _extract_borderline_count(parsed_output: dict[str, Any]) -> int:
@@ -335,6 +423,57 @@ def load_prompt_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def compute_request_hash(
+    *,
+    model: str,
+    prompt_text: str,
+    temperature: float,
+    top_p: float,
+    frequency_penalty: float,
+    presence_penalty: float,
+    seed: int | None,
+    json_mode: bool,
+) -> str:
+    payload = {
+        "model": model,
+        "prompt_text": prompt_text,
+        "temperature": temperature,
+        "top_p": top_p,
+        "frequency_penalty": frequency_penalty,
+        "presence_penalty": presence_penalty,
+        "seed": seed,
+        "json_mode": json_mode,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def load_cache_index(cache_path: Path) -> dict[str, dict[str, Any]]:
+    if not cache_path.exists():
+        return {}
+    index: dict[str, dict[str, Any]] = {}
+    for line in cache_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("request_hash", "")).strip()
+        if not key:
+            continue
+        index[key] = row
+    return index
+
+
+def append_cache_row(cache_path: Path, cache_row: dict[str, Any]) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    with cache_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(cache_row, ensure_ascii=False) + "\n")
+
+
 def extract_json_object(text: str) -> dict[str, Any] | None:
     text = text.strip()
     if not text:
@@ -368,6 +507,7 @@ def call_openai_chat(
     frequency_penalty: float,
     presence_penalty: float,
     seed: int | None,
+    json_mode: bool,
     timeout_seconds: int = 120,
 ) -> tuple[str, dict[str, Any]]:
     url = "https://api.openai.com/v1/chat/completions"
@@ -381,6 +521,8 @@ def call_openai_chat(
     }
     if seed is not None:
         payload["seed"] = seed
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url=url,
@@ -421,6 +563,8 @@ def run_batch(
     seed: int | None,
     require_snapshot_model: bool,
     enforce_response_model_match: bool,
+    json_mode: bool,
+    cache_path: Path,
 ) -> None:
     if require_snapshot_model and not is_snapshot_model_name(model):
         raise ValueError(
@@ -433,6 +577,7 @@ def run_batch(
         rows = rows[: max(0, max_rows)]
     output_jsonl.parent.mkdir(parents=True, exist_ok=True)
     output_jsonl.write_text("", encoding="utf-8")
+    cache_index = load_cache_index(cache_path)
 
     total = len(rows)
     success_count = 0
@@ -455,61 +600,120 @@ def run_batch(
         json_integrity_ok = False
         json_integrity_errors: list[str] = []
         validation_warnings: list[str] = []
+        normalization_notes: list[str] = []
+        request_hash = compute_request_hash(
+            model=model,
+            prompt_text=prompt_text,
+            temperature=temperature,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            seed=seed,
+            json_mode=json_mode,
+        )
 
-        for attempt in range(1, max_retries + 1):
-            try:
-                model_output_text, raw_api_response = call_openai_chat(
-                    api_key=api_key,
-                    model=model,
-                    prompt_text=prompt_text,
-                    temperature=temperature,
-                    top_p=top_p,
-                    frequency_penalty=frequency_penalty,
-                    presence_penalty=presence_penalty,
-                    seed=seed,
-                    timeout_seconds=timeout_seconds,
-                )
-                response_model = str(raw_api_response.get("model", "")).strip()
-                if (
-                    enforce_response_model_match
-                    and response_model
-                    and response_model != model
-                ):
-                    raise ValueError(
-                        "Response model mismatch: "
-                        f"requested={model!r}, response={response_model!r}"
+        cached = cache_index.get(request_hash)
+        if cached:
+            model_output_text = str(cached.get("model_output_text", ""))
+            raw_api_response = (
+                cached.get("raw_api_response")
+                if isinstance(cached.get("raw_api_response"), dict)
+                else {}
+            )
+            parsed_output = (
+                cached.get("parsed_output")
+                if isinstance(cached.get("parsed_output"), dict)
+                else None
+            )
+            json_integrity_ok = bool(cached.get("json_integrity_ok", False))
+            json_integrity_errors = (
+                cached.get("json_integrity_errors")
+                if isinstance(cached.get("json_integrity_errors"), list)
+                else []
+            )
+            validation_warnings = (
+                cached.get("validation_warnings")
+                if isinstance(cached.get("validation_warnings"), list)
+                else []
+            )
+            normalization_notes = (
+                cached.get("normalization_notes")
+                if isinstance(cached.get("normalization_notes"), list)
+                else []
+            )
+            error_message = None
+        else:
+            for attempt in range(1, max_retries + 1):
+                try:
+                    model_output_text, raw_api_response = call_openai_chat(
+                        api_key=api_key,
+                        model=model,
+                        prompt_text=prompt_text,
+                        temperature=temperature,
+                        top_p=top_p,
+                        frequency_penalty=frequency_penalty,
+                        presence_penalty=presence_penalty,
+                        seed=seed,
+                        json_mode=json_mode,
+                        timeout_seconds=timeout_seconds,
                     )
-                parsed_candidate = extract_json_object(model_output_text)
-                json_integrity_ok, json_integrity_errors = check_json_structural_integrity(
-                    parsed_candidate
-                )
-                if not json_integrity_ok:
-                    raise ValueError(
-                        "JSON integrity failed: " + " | ".join(json_integrity_errors)
+                    response_model = str(raw_api_response.get("model", "")).strip()
+                    if (
+                        enforce_response_model_match
+                        and response_model
+                        and response_model != model
+                    ):
+                        raise ValueError(
+                            "Response model mismatch: "
+                            f"requested={model!r}, response={response_model!r}"
+                        )
+                    parsed_candidate = extract_json_object(model_output_text)
+                    json_integrity_ok, json_integrity_errors = check_json_structural_integrity(
+                        parsed_candidate
                     )
+                    if not json_integrity_ok:
+                        raise ValueError(
+                            "JSON integrity failed: " + " | ".join(json_integrity_errors)
+                        )
 
-                parsed_output = parsed_candidate
-                if parsed_output is not None:
-                    validation_errors, validation_warnings = validate_parsed_output(
-                        parsed_output
+                    parsed_output, normalization_notes = normalize_parsed_output(
+                        parsed_candidate
                     )
-                    if validation_errors:
-                        validation_warnings = [
-                            f"Validation Error: {msg}" for msg in validation_errors
-                        ] + validation_warnings
-                error_message = None
-                break
-            except urllib.error.HTTPError as exc:
-                response_text = exc.read().decode("utf-8", errors="replace")
-                error_message = f"HTTPError {exc.code}: {response_text}"
-                if exc.code in (401, 403):
-                    # Stop the entire run for invalid/unauthorized key errors.
+                    if parsed_output is not None:
+                        validation_errors, validation_warnings = validate_parsed_output(
+                            parsed_output
+                        )
+                        if validation_errors:
+                            validation_warnings = [
+                                f"Validation Error: {msg}" for msg in validation_errors
+                            ] + validation_warnings
+                    error_message = None
                     break
-            except Exception as exc:  # noqa: BLE001
-                error_message = f"{type(exc).__name__}: {exc}"
+                except urllib.error.HTTPError as exc:
+                    response_text = exc.read().decode("utf-8", errors="replace")
+                    error_message = f"HTTPError {exc.code}: {response_text}"
+                    if exc.code in (401, 403):
+                        # Stop the entire run for invalid/unauthorized key errors.
+                        break
+                except Exception as exc:  # noqa: BLE001
+                    error_message = f"{type(exc).__name__}: {exc}"
 
-            if attempt < max_retries:
-                time.sleep(min(2 * attempt, 10))
+                if attempt < max_retries:
+                    time.sleep(min(2 * attempt, 10))
+
+            if error_message is None:
+                cache_row = {
+                    "request_hash": request_hash,
+                    "model_output_text": model_output_text,
+                    "raw_api_response": raw_api_response,
+                    "parsed_output": parsed_output,
+                    "json_integrity_ok": json_integrity_ok,
+                    "json_integrity_errors": json_integrity_errors,
+                    "validation_warnings": validation_warnings,
+                    "normalization_notes": normalization_notes,
+                }
+                append_cache_row(cache_path, cache_row)
+                cache_index[request_hash] = cache_row
 
         out_row = {
             "candidate_index": row.get("candidate_index"),
@@ -526,6 +730,7 @@ def run_batch(
             "model_output_text": model_output_text,
             "parsed_output": parsed_output,
             "validation_warnings": validation_warnings,
+            "normalization_notes": normalization_notes,
             "raw_api_response": raw_api_response,
         }
 
@@ -671,6 +876,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional cap on number of prompt rows to process (for pilot runs).",
     )
+    parser.add_argument(
+        "--json-mode",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Use JSON response_format mode for API calls.",
+    )
+    parser.add_argument(
+        "--cache-path",
+        default="data/output/scoring_runs/request_cache.jsonl",
+        help="Persistent cache file for successful responses keyed by input hash.",
+    )
     return parser
 
 
@@ -717,6 +933,11 @@ def main() -> None:
         if args.enforce_response_model_match is not None
         else coerce_config_bool(config.get("enforce_response_model_match"), False)
     )
+    json_mode = (
+        args.json_mode
+        if args.json_mode is not None
+        else coerce_config_bool(config.get("json_mode"), True)
+    )
     seed = args.seed
     if seed is None:
         seed = coerce_config_int(config.get("seed"), None)
@@ -746,6 +967,8 @@ def main() -> None:
         seed=seed,
         require_snapshot_model=require_snapshot_model,
         enforce_response_model_match=enforce_response_model_match,
+        json_mode=json_mode,
+        cache_path=Path(args.cache_path),
     )
 
 

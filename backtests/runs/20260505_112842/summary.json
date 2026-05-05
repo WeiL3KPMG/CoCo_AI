@@ -1,0 +1,26 @@
+{
+  "run_id": "20260505_112842",
+  "created_at": "2026-05-05T11:29:03",
+  "input_excel": "backtests/datasets/CoCo_examples.xlsx",
+  "datasets_dir": "backtests/datasets",
+  "dataset_files": [
+    "CoCo_examples.xlsx"
+  ],
+  "compare_prompt": "prompts/Core/compare_prompt.txt",
+  "model_requested": "gpt-4o-mini-2024-07-18",
+  "positive_tiers": [
+    "median",
+    "strong"
+  ],
+  "total_candidates": 2,
+  "predicted_positive_count": 1,
+  "false_negative_count": 1,
+  "error_count": 0,
+  "recall_at_tier_gate": 0.5,
+  "outputs": {
+    "results_jsonl": "backtests/runs/20260505_112842/results.jsonl",
+    "summary_json": "backtests/runs/20260505_112842/summary.json",
+    "false_negatives_csv": "backtests/runs/20260505_112842/false_negatives.csv",
+    "backtest_review_excel": "backtests/runs/20260505_112842/backtest_review.xlsx"
+  }
+}

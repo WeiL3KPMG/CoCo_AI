@@ -1,0 +1,2 @@
+dataset_file,sheet,ticker,predicted_tier,overall_score,status,error
+CoCo_examples.xlsx,Guangli,SZSE:300793,Weak,38,ok,

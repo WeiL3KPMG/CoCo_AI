@@ -1,0 +1,3 @@
+dataset_file,sheet,ticker,predicted_tier,overall_score,status,error
+_tmp_coco_examples.xlsx,Guangli,SZSE:300793,Weak,38,ok,
+_tmp_coco_examples.xlsx,Guangli,TPEX:4980,Weak,38,ok,

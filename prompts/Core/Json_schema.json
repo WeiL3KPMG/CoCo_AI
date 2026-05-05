@@ -17,14 +17,14 @@
       "max_score": 25,
       "score": 0,
       "reason": "",
-      "evidence_strength": "high"
+      "evidence_strength": "medium"
     },
     {
       "criteria": "Scale & Infrastructure Intensity",
       "max_score": 20,
       "score": 0,
       "reason": "",
-      "evidence_strength": "high"
+      "evidence_strength": "low"
     },
     {
       "criteria": "Geography Relevance",
