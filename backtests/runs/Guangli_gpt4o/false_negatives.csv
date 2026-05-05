@@ -1,0 +1,9 @@
+dataset_file,sheet,ticker,predicted_tier,overall_score,status,error
+CoCo_examples.xlsx,Guangli,CNSX:ARWY,Weak,38,ok,
+CoCo_examples.xlsx,YBR,SZSE:002485,Weak,16,ok,
+CoCo_examples.xlsx,YBR,BSE:532808,Weak,38,ok,
+CoCo_examples.xlsx,YBR,TWSE:1473,Weak,38,ok,
+CoCo_examples.xlsx,YBR,SZSE:002269,Weak,38,ok,
+CoCo_examples.xlsx,YBR,KOSE:A005320,Weak,26,ok,
+CoCo_examples.xlsx,YBR,SEHK:844,Weak,38,ok,
+CoCo_examples.xlsx,YBR,SEHK:2020,Weak,38,ok,

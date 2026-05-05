@@ -42,6 +42,9 @@ ALLOWED_SCORE_BANDS: dict[str, list[int]] = {
     "Scale & Infrastructure Intensity": [0, 5, 10, 15, 20],
     "Geography Relevance": [0, 5, 10, 15],
 }
+TIER_CUTOFFS = (30, 60)
+TIER_CUTOFF_MARGIN = 5
+BOUNDARY_EXTRA_CALLS = 4
 
 
 @dataclass
@@ -107,6 +110,12 @@ def parse_args() -> argparse.Namespace:
         help="Top-p sampling (default from config, then 1.0).",
     )
     parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional request seed for reproducibility (default from config; unset means no seed).",
+    )
+    parser.add_argument(
         "--max-candidates",
         type=int,
         default=None,
@@ -144,6 +153,12 @@ def parse_args() -> argparse.Namespace:
         "--cache-path",
         default="backtests/cache/request_cache.jsonl",
         help="Persistent cache file for successful responses keyed by input hash.",
+    )
+    parser.add_argument(
+        "--cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable persistent cache reads/writes (default: true). Use --no-cache for fresh API calls.",
     )
     return parser.parse_args()
 
@@ -184,6 +199,55 @@ def _coerce_text(value: Any) -> str:
     if isinstance(value, float) and pd.isna(value):
         return ""
     return str(value).strip()
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+    return None
+
+
+def _coerce_config_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    return default
+
+
+def _is_snapshot_model_name(model: str) -> bool:
+    # Snapshot names usually end with a date suffix, e.g. gpt-4o-2024-08-06.
+    return bool(re.search(r"\d{4}-\d{2}-\d{2}$", model.strip()))
+
+
+def _response_model_matches_requested(requested: str, actual: str) -> bool:
+    requested_clean = requested.strip()
+    actual_clean = actual.strip()
+    if not requested_clean or not actual_clean:
+        return False
+    if _is_snapshot_model_name(requested_clean):
+        return actual_clean == requested_clean
+    return actual_clean == requested_clean or actual_clean.startswith(f"{requested_clean}-")
 
 
 def extract_candidates_from_workbook(path: Path) -> list[CandidateRow]:
@@ -248,6 +312,7 @@ def call_openai_chat(
     temperature: float,
     top_p: float,
     json_mode: bool,
+    seed: int | None,
     timeout_seconds: int = 180,
 ) -> tuple[str, dict[str, Any]]:
     payload = {
@@ -258,6 +323,8 @@ def call_openai_chat(
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
+    if seed is not None:
+        payload["seed"] = seed
     request = urllib.request.Request(
         url="https://api.openai.com/v1/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
@@ -314,6 +381,7 @@ def compute_request_hash(
     temperature: float,
     top_p: float,
     json_mode: bool,
+    seed: int | None,
 ) -> str:
     payload = {
         "model": model,
@@ -321,6 +389,7 @@ def compute_request_hash(
         "temperature": temperature,
         "top_p": top_p,
         "json_mode": json_mode,
+        "seed": seed,
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -384,12 +453,68 @@ def _coerce_int_like(value: Any) -> int | None:
     return None
 
 
+def _normalize_evidence_quotes(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    quotes: list[str] = []
+    for item in value:
+        text = str(item).strip() if isinstance(item, str) else ""
+        if text:
+            quotes.append(text)
+    return quotes
+
+
+def _extract_usage_tokens(raw_api_response: dict[str, Any]) -> tuple[int, int, int]:
+    usage = raw_api_response.get("usage")
+    if not isinstance(usage, dict):
+        return 0, 0, 0
+    prompt_tokens = _coerce_int_like(usage.get("prompt_tokens")) or 0
+    completion_tokens = _coerce_int_like(usage.get("completion_tokens")) or 0
+    total_tokens = _coerce_int_like(usage.get("total_tokens"))
+    if total_tokens is None:
+        total_tokens = prompt_tokens + completion_tokens
+    return prompt_tokens, completion_tokens, total_tokens
+
+
 def _tier_from_score(score: int) -> str:
-    if score >= 70:
+    if score >= 60:
         return "Strong"
-    if score >= 40:
+    if score >= 30:
         return "Median"
     return "Weak"
+
+
+def _is_near_tier_cutoff(score: int, margin: int = TIER_CUTOFF_MARGIN) -> bool:
+    return any(abs(score - cutoff) <= margin for cutoff in TIER_CUTOFFS)
+
+
+def _median_int(values: list[int]) -> int:
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2]
+
+
+def _majority_tier_from_scores(scores: list[int]) -> tuple[str, int, dict[str, int]]:
+    tier_scores: dict[str, list[int]] = {"Weak": [], "Median": [], "Strong": []}
+    for score in scores:
+        tier_scores[_tier_from_score(score)].append(score)
+
+    tier_votes = {tier: len(vals) for tier, vals in tier_scores.items() if vals}
+    max_votes = max(tier_votes.values())
+    leaders = [tier for tier, count in tier_votes.items() if count == max_votes]
+
+    if len(leaders) == 1:
+        selected_tier = leaders[0]
+    else:
+        median_tier = _tier_from_score(_median_int(scores))
+        if median_tier in leaders:
+            selected_tier = median_tier
+        else:
+            # Conservative tie-breaker: favor lower tier.
+            tier_rank = {"Weak": 0, "Median": 1, "Strong": 2}
+            selected_tier = min(leaders, key=lambda t: tier_rank[t])
+
+    representative_score = _median_int(tier_scores[selected_tier])
+    return selected_tier, representative_score, tier_votes
 
 
 def _clamp_to_allowed_band(score: int, allowed: list[int]) -> int:
@@ -418,8 +543,11 @@ def normalize_parsed_output(parsed_output: dict[str, Any] | None) -> tuple[dict[
         score_raw = _coerce_int_like(item.get("score"))
         if allowed:
             item["max_score"] = max(allowed)
+            min_allowed = min(allowed)
+            quotes = _normalize_evidence_quotes(item.get("evidence_quotes"))
+            item["evidence_quotes"] = quotes
             if score_raw is None:
-                score = min(allowed)
+                score = min_allowed
                 item["score"] = score
                 notes.append(
                     f"criteria_scores[{idx}] score missing/non-integer; defaulted to {score}."
@@ -432,6 +560,15 @@ def normalize_parsed_output(parsed_output: dict[str, Any] | None) -> tuple[dict[
                 )
             else:
                 item["score"] = score_raw
+
+            # Enforce evidence grounding: non-minimum score requires at least one quote.
+            if int(item["score"]) > min_allowed and not quotes:
+                item["score"] = min_allowed
+                item["evidence_strength"] = "low"
+                notes.append(
+                    f"criteria_scores[{idx}] missing evidence_quotes; "
+                    f"score clamped to {min_allowed} and evidence_strength set to low."
+                )
             total += int(item["score"])
             saw_any_numeric = True
             continue
@@ -448,6 +585,38 @@ def normalize_parsed_output(parsed_output: dict[str, Any] | None) -> tuple[dict[
         )
 
     return parsed_output, notes
+
+
+def _call_and_normalize_once(
+    *,
+    api_key: str,
+    model: str,
+    prompt_text: str,
+    temperature: float,
+    top_p: float,
+    json_mode: bool,
+    seed: int | None,
+) -> tuple[str, dict[str, Any] | None, dict[str, Any], list[str], str | None]:
+    model_output_text, raw_api_response = call_openai_chat(
+        api_key=api_key,
+        model=model,
+        prompt_text=prompt_text,
+        temperature=temperature,
+        top_p=top_p,
+        json_mode=json_mode,
+        seed=seed,
+    )
+    parsed_output = parse_model_json(model_output_text)
+    if parsed_output is None:
+        return (
+            model_output_text,
+            None,
+            raw_api_response,
+            [],
+            "Failed to parse model output as JSON object.",
+        )
+    parsed_output, normalization_notes = normalize_parsed_output(parsed_output)
+    return model_output_text, parsed_output, raw_api_response, normalization_notes, None
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -572,6 +741,18 @@ def main() -> None:
         else float(config.get("temperature", 0.0))
     )
     top_p = args.top_p if args.top_p is not None else float(config.get("top_p", 1.0))
+    seed = args.seed if args.seed is not None else _coerce_optional_int(config.get("seed"))
+    require_snapshot_model = _coerce_config_bool(config.get("require_snapshot_model"), False)
+    enforce_response_model_match = _coerce_config_bool(
+        config.get("enforce_response_model_match"), False
+    )
+
+    if require_snapshot_model and not _is_snapshot_model_name(model):
+        raise ValueError(
+            "Config requires a snapshot model, but requested model is not pinned: "
+            f"'{model}'. Use a snapshot name like 'gpt-4o-YYYY-MM-DD'."
+        )
+
     positive_tiers = {
         part.strip().lower()
         for part in args.positive_tiers.split(",")
@@ -597,11 +778,18 @@ def main() -> None:
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = Path(args.runs_dir) / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    cache_enabled = bool(args.cache)
     cache_path = Path(args.cache_path)
-    cache_index = load_cache_index(cache_path)
+    cache_index = load_cache_index(cache_path) if cache_enabled else {}
+    cache_status = "ENABLED" if cache_enabled else "DISABLED"
+    print(f"Cache: {cache_status} ({cache_path.as_posix()})")
+    print(f"Request seed: {seed if seed is not None else 'UNSET'}")
 
     result_rows: list[dict[str, Any]] = []
     false_negatives: list[dict[str, Any]] = []
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_tokens = 0
 
     total = len(candidates)
     for idx, row in enumerate(candidates, start=1):
@@ -617,15 +805,20 @@ def main() -> None:
         raw_api_response: dict[str, Any] = {}
         parsed_output: dict[str, Any] | None = None
         normalization_notes: list[str] = []
+        boundary_stabilization_applied = False
+        boundary_score_samples: list[int] = []
+        boundary_tier_votes: dict[str, int] = {}
         request_hash = compute_request_hash(
             model=model,
             prompt_text=prompt_text,
             temperature=temperature,
             top_p=top_p,
             json_mode=bool(args.json_mode),
+            seed=seed,
         )
 
-        cached = cache_index.get(request_hash)
+        cached = cache_index.get(request_hash) if cache_enabled else None
+        from_cache = cached is not None
         if cached:
             model_output_text = str(cached.get("model_output_text", ""))
             raw_api_response = (
@@ -643,24 +836,88 @@ def main() -> None:
                 if isinstance(cached.get("normalization_notes"), list)
                 else []
             )
+            boundary_stabilization_applied = bool(
+                cached.get("boundary_stabilization_applied", False)
+            )
+            boundary_score_samples = (
+                cached.get("boundary_score_samples")
+                if isinstance(cached.get("boundary_score_samples"), list)
+                else []
+            )
+            boundary_tier_votes = (
+                cached.get("boundary_tier_votes")
+                if isinstance(cached.get("boundary_tier_votes"), dict)
+                else {}
+            )
             error = None
         else:
             for attempt in range(1, max(1, args.max_retries) + 1):
                 try:
-                    model_output_text, raw_api_response = call_openai_chat(
+                    (
+                        model_output_text,
+                        parsed_output,
+                        raw_api_response,
+                        normalization_notes,
+                        error,
+                    ) = _call_and_normalize_once(
                         api_key=api_key,
                         model=model,
                         prompt_text=prompt_text,
                         temperature=temperature,
                         top_p=top_p,
                         json_mode=bool(args.json_mode),
+                        seed=seed,
                     )
-                    parsed_output = parse_model_json(model_output_text)
-                    if parsed_output is None:
-                        error = "Failed to parse model output as JSON object."
-                    else:
-                        parsed_output, normalization_notes = normalize_parsed_output(parsed_output)
-                        error = None
+                    if parsed_output is not None:
+                        score_raw = _coerce_int_like(parsed_output.get("overall_score"))
+                        if score_raw is not None and _is_near_tier_cutoff(score_raw):
+                            boundary_stabilization_applied = True
+                            boundary_score_samples = [score_raw]
+                            for _ in range(BOUNDARY_EXTRA_CALLS):
+                                try:
+                                    _, extra_parsed, _, extra_notes, extra_error = _call_and_normalize_once(
+                                        api_key=api_key,
+                                        model=model,
+                                        prompt_text=prompt_text,
+                                        temperature=temperature,
+                                        top_p=top_p,
+                                        json_mode=bool(args.json_mode),
+                                        seed=seed,
+                                    )
+                                    if extra_error is None and extra_parsed is not None:
+                                        extra_score = _coerce_int_like(extra_parsed.get("overall_score"))
+                                        if extra_score is not None:
+                                            boundary_score_samples.append(extra_score)
+                                        normalization_notes.extend(extra_notes)
+                                except Exception:
+                                    # Keep primary result if extra boundary samples fail.
+                                    continue
+
+                            if len(boundary_score_samples) >= 2:
+                                (
+                                    voted_tier,
+                                    representative_score,
+                                    boundary_tier_votes,
+                                ) = _majority_tier_from_scores(boundary_score_samples)
+                                parsed_output["overall_score"] = representative_score
+                                parsed_output["tier"] = voted_tier
+                                normalization_notes.append(
+                                    "Boundary stabilization applied: "
+                                    f"scores={boundary_score_samples}, votes={boundary_tier_votes}, "
+                                    f"selected_tier={voted_tier}, representative_score={representative_score}."
+                                )
+
+                        response_model = str(raw_api_response.get("model", "")).strip()
+                        if enforce_response_model_match and not _response_model_matches_requested(
+                            model, response_model
+                        ):
+                            error = (
+                                "Response model mismatch: "
+                                f"requested='{model}', actual='{response_model or 'UNKNOWN'}'. "
+                                "Use a pinned snapshot model to avoid run-to-run drift."
+                            )
+                        else:
+                            error = None
                     break
                 except urllib.error.HTTPError as exc:
                     detail = exc.read().decode("utf-8", errors="replace")
@@ -680,16 +937,29 @@ def main() -> None:
                         break
                     time.sleep(min(2.0 * attempt, 10.0))
 
-            if error is None:
+            if error is None and cache_enabled:
                 cache_row = {
                     "request_hash": request_hash,
                     "model_output_text": model_output_text,
                     "raw_api_response": raw_api_response,
                     "parsed_output": parsed_output,
                     "normalization_notes": normalization_notes,
+                    "boundary_stabilization_applied": boundary_stabilization_applied,
+                    "boundary_score_samples": boundary_score_samples,
+                    "boundary_tier_votes": boundary_tier_votes,
                 }
                 append_cache_row(cache_path, cache_row)
                 cache_index[request_hash] = cache_row
+
+        if not from_cache:
+            (
+                prompt_tokens,
+                completion_tokens,
+                used_total_tokens,
+            ) = _extract_usage_tokens(raw_api_response)
+            total_prompt_tokens += prompt_tokens
+            total_completion_tokens += completion_tokens
+            total_tokens += used_total_tokens
 
         status = "ok" if error is None else "error"
         predicted_tier = str((parsed_output or {}).get("tier", "")).strip()
@@ -711,6 +981,10 @@ def main() -> None:
             "error": error,
             "normalization_notes": normalization_notes,
             "response_model": str(raw_api_response.get("model", "")).strip(),
+            "from_cache": from_cache,
+            "boundary_stabilization_applied": boundary_stabilization_applied,
+            "boundary_score_samples": boundary_score_samples,
+            "boundary_tier_votes": boundary_tier_votes,
             "parsed_output": parsed_output,
         }
         result_rows.append(out_row)
@@ -748,12 +1022,20 @@ def main() -> None:
         "dataset_files": [p.name for p in excel_paths],
         "compare_prompt": args.compare_prompt,
         "model_requested": model,
+        "request_seed": seed,
+        "require_snapshot_model": require_snapshot_model,
+        "enforce_response_model_match": enforce_response_model_match,
+        "cache_enabled": cache_enabled,
+        "cache_path": str(cache_path.as_posix()),
         "positive_tiers": sorted(list(positive_tiers)),
         "total_candidates": total,
         "predicted_positive_count": predicted_positive_count,
         "false_negative_count": false_negative_count,
         "error_count": errors_count,
         "recall_at_tier_gate": round(recall_at_tier_gate, 4),
+        "total_prompt_tokens": total_prompt_tokens,
+        "total_completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
         "outputs": {
             "results_jsonl": str((run_dir / "results.jsonl").as_posix()),
             "summary_json": str((run_dir / "summary.json").as_posix()),

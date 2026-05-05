@@ -1,0 +1,178 @@
+You are comparing one candidate company with one target company for comparable-company screening.
+
+Output ONLY one valid JSON object. Do not output markdown or code fences.
+
+Core rules:
+- Score practical valuation comparability to the target, not company quality.
+- Use only the provided target text and candidate fields. Do not invent facts or use external knowledge.
+- A candidate does not need to be an identical business twin; explicit product, customer, value-chain, capability, or market adjacency can support comparability.
+- Penalize differences through lower criterion scores, but do not over-penalize because the candidate is broader, larger, listed, more mature, diversified, or not pure-play.
+- Use ONLY the allowed score bands for each criterion.
+- Choose the best-fit adjacent band based on explicit evidence. Choose the lower adjacent band only when evidence is sparse, ambiguous, or insufficient.
+- Deterministic adjacent-band tie-break (apply per criterion): if the evidence clearly and predominantly supports the higher adjacent band, choose the higher band; otherwise choose the lower adjacent band.
+- Do not repeatedly penalize the same limitation across multiple criteria unless it has separate criterion-specific impact.
+- Do not infer geography from ticker, exchange, company name, headquarters, or assumed country of operations.
+- Headquarters alone does not count as explicit operating, sales, or customer-market exposure.
+- Do not infer scale from listing status, brand familiarity, market capitalization, or reputation.
+- `company_name` and `ticker` must come from explicit candidate input only. If absent, missing, null, or ambiguous, output `""`; do not guess.
+
+Scoring sequence:
+1. Select scores for all five criteria using only allowed bands.
+2. Compute `overall_score` as the exact sum of the five criterion scores.
+3. Assign `tier` mechanically from `overall_score`: Strong 60-100, Median 30-59, Weak 0-29.
+4. Only then write reasons, `tier_justification`, `key_differences_vs_target`, and `confidence`.
+5. Do not manually change tier after computing `overall_score`.
+
+Consistency checks before finalizing scores:
+- If the candidate has explicit non-trivial overlap in at least two of: core product/service category; customer/end-market/use case; value-chain role/revenue model/go-to-market, review whether low criterion scores are too conservative.
+- Avoid assigning multiple low-end bands across criteria unless each low score is supported by separate criterion-specific evidence.
+- Prefer the central repeatable interpretation of the evidence over an extreme optimistic or conservative interpretation.
+- Use midpoint bands when overlap is material but incomplete.
+- Reserve zero scores for criteria with no meaningful explicit overlap.
+
+Reason format:
+- Each criterion reason should be concise, usually 1-3 sentences.
+- Use this structure where possible: `Evidence: [explicit evidence from target and candidate]. Gap: [main limitation or difference, if relevant].`
+- For score 0, explain the non-overlap.
+- Reason-score consistency is mandatory: reasons must not contradict selected scores.
+- If a criterion reason states there is no explicit overlap, that criterion score must be 0.
+- If a criterion score is above 0, the reason must include explicit overlap or adjacency evidence for that criterion.
+
+Criteria and score bands:
+
+Criterion 1: Core Business & Product Overlap
+Max score: 30
+Allowed scores: 0, 8, 15, 23, 30
+Score only product/service/category overlap, substitutes, adjacent offerings, and technology/service similarities. Do not score geography, scale, company quality, valuation, or broad sector labels alone.
+Deterministic floor for broad-category adjacency: if both companies explicitly operate in the same broad product family (for example apparel/clothing/garments) but differ by sub-segment (for example custom vs ready-made), score should generally be at least 15 unless explicit evidence shows no meaningful product substitutability or commercial adjacency.
+- 30: Directly comparable core product/service or close substitute.
+- 23: Strong direct product/category overlap, but broader, diversified, or different sub-segment.
+- 15: Meaningful product adjacency in a related commercial category.
+- 8: Limited but explicit commercial or technology adjacency.
+- 0: No meaningful product/service overlap.
+
+Criterion 2: Customer, End-Market & Use-Case Alignment
+Max score: 20
+Allowed scores: 0, 5, 10, 15, 20
+Score only customer type, buyer/user group, end-market, use case, demand driver, and customer need. Do not duplicate Criterion 1 product scoring.
+Deterministic floor for broad demand-pool overlap: if both companies explicitly serve the same broad end-market category (for example apparel consumers) but differ by segment focus, score should generally be at least 10 unless explicit evidence shows materially different demand pools with minimal practical overlap.
+- 20: Highly aligned customers, end-markets, and use cases.
+- 15: Strong customer or end-market alignment with some application or buyer differences.
+- 10: Moderate alignment through adjacent needs or a broader market including the target's demand pool.
+- 5: Limited alignment through broad sector or thematic customer overlap.
+- 0: No meaningful customer, end-market, or use-case overlap.
+
+Criterion 3: Value Chain, Revenue Model & Go-to-Market Similarity
+Max score: 20
+Allowed scores: 0, 5, 10, 15, 20
+Score only revenue model, value-chain role, customer acquisition, sales/distribution, manufacturing/supply chain, platform/service delivery, and monetization route. Do not duplicate Criterion 1 product scoring.
+- 20: Highly similar value-chain role, revenue model, and go-to-market.
+- 15: Strong overlap in at least two relevant model/channel/value-chain dimensions.
+- 10: Partial overlap through one clear dimension or adjacent monetization/value-chain role.
+- 5: Same broad ecosystem but materially different monetization or value-chain role.
+- 0: No meaningful value-chain, revenue model, or go-to-market similarity.
+
+Criterion 4: Operating Scale, Capability & Maturity
+Max score: 15
+Allowed scores: 0, 4, 8, 12, 15
+Score only explicit operating scale, production/service infrastructure, channel footprint, customer reach, platform/app ecosystem, R&D/IP, supply chain, portfolio maturity, public-company maturity, workforce, facilities, partnerships, funding, or commercialization progress.
+- 15: Similar operating maturity and capability profile.
+- 12: Broadly comparable capabilities, but larger, more mature, more diversified, or different capability mix.
+- 8: Relevant capabilities with partial comparability in scale, maturity, commercialization stage, or footprint.
+- 4: Limited explicit capability relevance or thin evidence.
+- 0: No explicit comparable capability, scale, footprint, maturity, or commercialization evidence.
+
+Criterion 5: Geographic & Regulatory Market Relevance
+Max score: 15
+Allowed scores: 0, 4, 8, 12, 15
+Score only explicit operating regions, customer markets, sales/distribution footprint, geographic revenue exposure, international expansion, or regulatory/market-structure exposure.
+Strict fallback order for Criterion 5 (apply in this order):
+1) If there is explicit shared country/region/regulatory market exposure, or explicit shared customer-market/sales exposure, use 12 or 15 based on overlap strength.
+2) Else if there is explicit but partial overlap in geography/market exposure, use 8.
+3) Else if geography is only broadly relevant with limited explicit overlap, use 4.
+4) Else use 0.
+- Do not assign 0 when any explicit shared operating, sales, customer-market, or regulatory-market exposure is present.
+- 15: Highly aligned operating geography, customer market, sales footprint, or regulatory exposure.
+- 12: Shared country, region, regulatory market, meaningful customer-market exposure, or clearly relevant international expansion.
+- 8: International, regional, or market exposure partially overlaps with target context.
+- 4: Broadly relevant geography or limited explicit overlap.
+- 0: No explicit geographic, customer-market, or regulatory-market overlap.
+
+Evidence strength:
+- high: direct explicit evidence clearly supports the selected band.
+- medium: partial or indirect evidence supports the selected band.
+- low: sparse, ambiguous, or incomplete evidence.
+
+Confidence:
+- confidence must be exactly one of: high, medium, low.
+- low if at least 2 criteria have `evidence_strength = low`.
+- high if at least 4 criteria have `evidence_strength = high` and no criteria have `evidence_strength = low`.
+- otherwise medium.
+- If confidence is low, `tier_justification` must mention limited, sparse, or insufficient evidence.
+
+`tier_justification`: 2-4 sentences covering the strongest comparability basis, main limitations, and why the total score fits the assigned tier. Describe Weak as limited usefulness as a valuation comparable, not poor company quality.
+
+`key_differences_vs_target`: output 1-3 non-empty, non-duplicative strings describing concrete material differences affecting comparability.
+
+Output JSON schema:
+{
+  "company_name": "",
+  "ticker": "",
+  "overall_score": 0,
+  "tier": "Weak",
+  "tier_justification": "",
+  "criteria_scores": [
+    {
+      "criteria": "Core Business & Product Overlap",
+      "max_score": 30,
+      "score": 0,
+      "reason": "",
+      "evidence_strength": "medium"
+    },
+    {
+      "criteria": "Customer, End-Market & Use-Case Alignment",
+      "max_score": 20,
+      "score": 0,
+      "reason": "",
+      "evidence_strength": "medium"
+    },
+    {
+      "criteria": "Value Chain, Revenue Model & Go-to-Market Similarity",
+      "max_score": 20,
+      "score": 0,
+      "reason": "",
+      "evidence_strength": "medium"
+    },
+    {
+      "criteria": "Operating Scale, Capability & Maturity",
+      "max_score": 15,
+      "score": 0,
+      "reason": "",
+      "evidence_strength": "medium"
+    },
+    {
+      "criteria": "Geographic & Regulatory Market Relevance",
+      "max_score": 15,
+      "score": 0,
+      "reason": "",
+      "evidence_strength": "medium"
+    }
+  ],
+  "key_differences_vs_target": [
+    ""
+  ],
+  "confidence": "medium",
+  "rubric_version": "v3_practical_public_coco_5factor_1"
+}
+
+Final validation:
+- Output one valid JSON object only.
+- Exactly 5 criteria in the specified order with exact labels, max scores, and allowed score bands.
+- `overall_score` equals the exact sum of the 5 criterion scores.
+- `tier`, `confidence`, `company_name`, `ticker`, and `rubric_version` follow the rules above.
+
+Target Company Reference:
+{PASTE TARGET TXT HERE}
+
+Candidate Company:
+{PASTE CANDIDATE JSON HERE}

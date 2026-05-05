@@ -52,6 +52,9 @@ ALLOWED_SCORE_BANDS: dict[str, list[int]] = {
     "Scale & Infrastructure Intensity": [0, 5, 10, 15, 20],
     "Geography Relevance": [0, 5, 10, 15],
 }
+TIER_CUTOFFS = (30, 60)
+TIER_CUTOFF_MARGIN = 5
+BOUNDARY_EXTRA_CALLS = 4
 
 
 def is_snapshot_model_name(model: str) -> bool:
@@ -103,12 +106,68 @@ def _coerce_int_like(value: Any) -> int | None:
     return None
 
 
+def _normalize_evidence_quotes(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    quotes: list[str] = []
+    for item in value:
+        text = str(item).strip() if isinstance(item, str) else ""
+        if text:
+            quotes.append(text)
+    return quotes
+
+
+def _extract_usage_tokens(raw_api_response: dict[str, Any]) -> tuple[int, int, int]:
+    usage = raw_api_response.get("usage")
+    if not isinstance(usage, dict):
+        return 0, 0, 0
+    prompt_tokens = _coerce_int_like(usage.get("prompt_tokens")) or 0
+    completion_tokens = _coerce_int_like(usage.get("completion_tokens")) or 0
+    total_tokens = _coerce_int_like(usage.get("total_tokens"))
+    if total_tokens is None:
+        total_tokens = prompt_tokens + completion_tokens
+    return prompt_tokens, completion_tokens, total_tokens
+
+
 def _tier_from_score(score: int) -> str:
-    if score >= 70:
+    if score >= 60:
         return "Strong"
-    if score >= 40:
+    if score >= 30:
         return "Median"
     return "Weak"
+
+
+def _is_near_tier_cutoff(score: int, margin: int = TIER_CUTOFF_MARGIN) -> bool:
+    return any(abs(score - cutoff) <= margin for cutoff in TIER_CUTOFFS)
+
+
+def _median_int(values: list[int]) -> int:
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2]
+
+
+def _majority_tier_from_scores(scores: list[int]) -> tuple[str, int, dict[str, int]]:
+    tier_scores: dict[str, list[int]] = {"Weak": [], "Median": [], "Strong": []}
+    for score in scores:
+        tier_scores[_tier_from_score(score)].append(score)
+
+    tier_votes = {tier: len(vals) for tier, vals in tier_scores.items() if vals}
+    max_votes = max(tier_votes.values())
+    leaders = [tier for tier, count in tier_votes.items() if count == max_votes]
+
+    if len(leaders) == 1:
+        selected_tier = leaders[0]
+    else:
+        median_tier = _tier_from_score(_median_int(scores))
+        if median_tier in leaders:
+            selected_tier = median_tier
+        else:
+            # Conservative tie-breaker: favor lower tier.
+            tier_rank = {"Weak": 0, "Median": 1, "Strong": 2}
+            selected_tier = min(leaders, key=lambda t: tier_rank[t])
+
+    representative_score = _median_int(tier_scores[selected_tier])
+    return selected_tier, representative_score, tier_votes
 
 
 def _clamp_to_allowed_band(score: int, allowed: list[int]) -> int:
@@ -143,8 +202,11 @@ def normalize_parsed_output(
 
         if allowed:
             item["max_score"] = max(allowed)
+            min_allowed = min(allowed)
+            quotes = _normalize_evidence_quotes(item.get("evidence_quotes"))
+            item["evidence_quotes"] = quotes
             if score_raw is None:
-                score = min(allowed)
+                score = min_allowed
                 item["score"] = score
                 notes.append(
                     f"criteria_scores[{idx}] score missing/non-integer; defaulted to {score}."
@@ -157,6 +219,15 @@ def normalize_parsed_output(
                 )
             else:
                 item["score"] = score_raw
+
+            # Enforce evidence grounding: non-minimum score requires at least one quote.
+            if int(item["score"]) > min_allowed and not quotes:
+                item["score"] = min_allowed
+                item["evidence_strength"] = "low"
+                notes.append(
+                    f"criteria_scores[{idx}] missing evidence_quotes; "
+                    f"score clamped to {min_allowed} and evidence_strength set to low."
+                )
             total += int(item["score"])
             saw_any_numeric = True
             continue
@@ -321,6 +392,24 @@ def validate_parsed_output(parsed_output: dict[str, Any]) -> tuple[list[str], li
         else:
             evidence_levels.append(evidence)
 
+        quotes = item.get("evidence_quotes")
+        if not isinstance(quotes, list):
+            errors.append(f"criteria_scores[{idx}].evidence_quotes must be a list.")
+            quote_count = 0
+        else:
+            quote_count = sum(1 for q in quotes if isinstance(q, str) and q.strip())
+            if quote_count == 0:
+                warnings.append(
+                    f"criteria_scores[{idx}].evidence_quotes is empty; "
+                    "criterion should be treated as low-evidence."
+                )
+
+        min_allowed = min(allowed_scores)
+        if score is not None and score > min_allowed and quote_count == 0:
+            errors.append(
+                f"criteria_scores[{idx}] score={score} requires at least one evidence quote."
+            )
+
     overall_score = _coerce_int_like(parsed_output.get("overall_score"))
     if overall_score is None:
         errors.append("overall_score must be an integer.")
@@ -334,7 +423,7 @@ def validate_parsed_output(parsed_output: dict[str, Any]) -> tuple[list[str], li
         errors.append(f"tier must be one of {sorted(ALLOWED_TIERS)}.")
     elif overall_score is not None:
         expected_tier = (
-            "Strong" if overall_score >= 70 else "Median" if overall_score >= 40 else "Weak"
+            "Strong" if overall_score >= 60 else "Median" if overall_score >= 30 else "Weak"
         )
         if tier != expected_tier:
             errors.append(
@@ -585,6 +674,9 @@ def run_batch(
     parsed_json_count = 0
     error_reason_counts: Counter[str] = Counter()
     validation_warning_count = 0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_tokens = 0
     for idx, row in enumerate(rows, start=1):
         prompt_text = str(row.get("prompt_text", "")).strip()
         if not prompt_text:
@@ -601,6 +693,12 @@ def run_batch(
         json_integrity_errors: list[str] = []
         validation_warnings: list[str] = []
         normalization_notes: list[str] = []
+        boundary_stabilization_applied = False
+        boundary_score_samples: list[int] = []
+        boundary_tier_votes: dict[str, int] = {}
+        boundary_extra_prompt_tokens = 0
+        boundary_extra_completion_tokens = 0
+        boundary_extra_total_tokens = 0
         request_hash = compute_request_hash(
             model=model,
             prompt_text=prompt_text,
@@ -613,6 +711,7 @@ def run_batch(
         )
 
         cached = cache_index.get(request_hash)
+        from_cache = cached is not None
         if cached:
             model_output_text = str(cached.get("model_output_text", ""))
             raw_api_response = (
@@ -640,6 +739,19 @@ def run_batch(
                 cached.get("normalization_notes")
                 if isinstance(cached.get("normalization_notes"), list)
                 else []
+            )
+            boundary_stabilization_applied = bool(
+                cached.get("boundary_stabilization_applied", False)
+            )
+            boundary_score_samples = (
+                cached.get("boundary_score_samples")
+                if isinstance(cached.get("boundary_score_samples"), list)
+                else []
+            )
+            boundary_tier_votes = (
+                cached.get("boundary_tier_votes")
+                if isinstance(cached.get("boundary_tier_votes"), dict)
+                else {}
             )
             error_message = None
         else:
@@ -687,6 +799,71 @@ def run_batch(
                             validation_warnings = [
                                 f"Validation Error: {msg}" for msg in validation_errors
                             ] + validation_warnings
+                        else:
+                            score_raw = _coerce_int_like(parsed_output.get("overall_score"))
+                            if score_raw is not None and _is_near_tier_cutoff(score_raw):
+                                boundary_stabilization_applied = True
+                                boundary_score_samples = [score_raw]
+                                for _ in range(BOUNDARY_EXTRA_CALLS):
+                                    try:
+                                        extra_output_text, extra_raw = call_openai_chat(
+                                            api_key=api_key,
+                                            model=model,
+                                            prompt_text=prompt_text,
+                                            temperature=temperature,
+                                            top_p=top_p,
+                                            frequency_penalty=frequency_penalty,
+                                            presence_penalty=presence_penalty,
+                                            seed=seed,
+                                            json_mode=json_mode,
+                                            timeout_seconds=timeout_seconds,
+                                        )
+                                        (
+                                            extra_prompt_tokens,
+                                            extra_completion_tokens,
+                                            extra_total_tokens,
+                                        ) = _extract_usage_tokens(extra_raw)
+                                        boundary_extra_prompt_tokens += extra_prompt_tokens
+                                        boundary_extra_completion_tokens += extra_completion_tokens
+                                        boundary_extra_total_tokens += extra_total_tokens
+
+                                        extra_candidate = extract_json_object(extra_output_text)
+                                        extra_ok, _ = check_json_structural_integrity(extra_candidate)
+                                        if not extra_ok:
+                                            continue
+                                        extra_parsed, extra_notes = normalize_parsed_output(
+                                            extra_candidate
+                                        )
+                                        if extra_parsed is None:
+                                            continue
+                                        extra_validation_errors, _ = validate_parsed_output(
+                                            extra_parsed
+                                        )
+                                        if extra_validation_errors:
+                                            continue
+                                        extra_score = _coerce_int_like(
+                                            extra_parsed.get("overall_score")
+                                        )
+                                        if extra_score is not None:
+                                            boundary_score_samples.append(extra_score)
+                                        normalization_notes.extend(extra_notes)
+                                    except Exception:
+                                        # Keep primary result if extra boundary samples fail.
+                                        continue
+
+                                if len(boundary_score_samples) >= 2:
+                                    (
+                                        voted_tier,
+                                        representative_score,
+                                        boundary_tier_votes,
+                                    ) = _majority_tier_from_scores(boundary_score_samples)
+                                    parsed_output["overall_score"] = representative_score
+                                    parsed_output["tier"] = voted_tier
+                                    normalization_notes.append(
+                                        "Boundary stabilization applied: "
+                                        f"scores={boundary_score_samples}, votes={boundary_tier_votes}, "
+                                        f"selected_tier={voted_tier}, representative_score={representative_score}."
+                                    )
                     error_message = None
                     break
                 except urllib.error.HTTPError as exc:
@@ -711,9 +888,25 @@ def run_batch(
                     "json_integrity_errors": json_integrity_errors,
                     "validation_warnings": validation_warnings,
                     "normalization_notes": normalization_notes,
+                    "boundary_stabilization_applied": boundary_stabilization_applied,
+                    "boundary_score_samples": boundary_score_samples,
+                    "boundary_tier_votes": boundary_tier_votes,
                 }
                 append_cache_row(cache_path, cache_row)
                 cache_index[request_hash] = cache_row
+
+        if not from_cache:
+            (
+                prompt_tokens,
+                completion_tokens,
+                used_total_tokens,
+            ) = _extract_usage_tokens(raw_api_response)
+            total_prompt_tokens += prompt_tokens
+            total_completion_tokens += completion_tokens
+            total_tokens += used_total_tokens
+            total_prompt_tokens += boundary_extra_prompt_tokens
+            total_completion_tokens += boundary_extra_completion_tokens
+            total_tokens += boundary_extra_total_tokens
 
         out_row = {
             "candidate_index": row.get("candidate_index"),
@@ -723,6 +916,7 @@ def run_batch(
             "model": model,
             "response_model": str(raw_api_response.get("model", "")).strip(),
             "status": "ok" if error_message is None else "error",
+            "from_cache": from_cache,
             "error": error_message,
             "json_integrity_ok": json_integrity_ok,
             "json_integrity_errors": json_integrity_errors,
@@ -731,6 +925,9 @@ def run_batch(
             "parsed_output": parsed_output,
             "validation_warnings": validation_warnings,
             "normalization_notes": normalization_notes,
+            "boundary_stabilization_applied": boundary_stabilization_applied,
+            "boundary_score_samples": boundary_score_samples,
+            "boundary_tier_votes": boundary_tier_votes,
             "raw_api_response": raw_api_response,
         }
 
@@ -769,6 +966,26 @@ def run_batch(
         f"parsed_json_ok={parsed_json_count}, "
         f"ok_with_validation_warnings={validation_warning_count}"
     )
+    print(
+        "Token usage (non-cached calls): "
+        f"total_prompt_tokens={total_prompt_tokens}, "
+        f"total_completion_tokens={total_completion_tokens}, "
+        f"total_tokens={total_tokens}"
+    )
+    summary = {
+        "model": model,
+        "total_rows": total,
+        "ok_count": success_count,
+        "error_count": error_count,
+        "parsed_json_ok_count": parsed_json_count,
+        "ok_with_validation_warnings": validation_warning_count,
+        "total_prompt_tokens": total_prompt_tokens,
+        "total_completion_tokens": total_completion_tokens,
+        "total_tokens": total_tokens,
+    }
+    summary_path = output_jsonl.with_name(f"{output_jsonl.stem}_summary.json")
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Run summary saved to: {summary_path}")
     if error_reason_counts:
         print("Error breakdown by type:")
         for reason, count in error_reason_counts.most_common():

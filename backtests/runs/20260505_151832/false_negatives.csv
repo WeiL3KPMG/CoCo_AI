@@ -1,0 +1,6 @@
+dataset_file,sheet,ticker,predicted_tier,overall_score,status,error
+CoCo_reddoorz.xlsx,Sheet1,NasdaqGS:TCOM,Weak,39,ok,
+CoCo_reddoorz.xlsx,Sheet1,NasdaqGS:EXPE,Weak,39,ok,
+CoCo_reddoorz.xlsx,Sheet1,NasdaqGS:MMYT,Weak,38,ok,
+CoCo_reddoorz.xlsx,Sheet1,ASX:WEB,Weak,38,ok,
+CoCo_reddoorz.xlsx,Sheet1,BME:EDR,Weak,30,ok,

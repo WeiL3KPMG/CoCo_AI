@@ -15,9 +15,9 @@ Critical discipline rules:
 - Use only the allowed score bands below (no other numeric values).
 - `overall_score` must equal the exact sum of criterion `score` values.
 - Assign tier strictly from `overall_score`:
-  - Strong: 70-100
-  - Median: 40-69
-  - Weak: 0-39
+  - Strong: 60-100
+  - Median: 30-59
+  - Weak: 0-29
 - `tier` must be exactly one of: `Strong`, `Median`, `Weak`.
 - Each criterion `reason` must be 1-2 sentences and include:
   (a) strongest supporting evidence signal, and

@@ -72,9 +72,9 @@ Critical discipline rules:
   - Each criterion score must be justified by criterion-specific evidence, not by repeating the same general difference.
 - overall_score must equal the exact sum of criterion score values.
 - Assign tier strictly from overall_score:
-  - Strong: 70-100
-  - Median: 40-69
-  - Weak: 0-39
+  - Strong: 60-100
+  - Median: 30-59
+  - Weak: 0-29
 - tier must be exactly one of: Strong, Median, Weak.
 - Each criterion reason should be concise, typically 1-3 sentences, and include:
   - the strongest explicit evidence supporting the selected band; and
@@ -96,9 +96,9 @@ Deterministic scoring sequence:
 - First select the score band for each of the five criteria using only the allowed score values.
 - Then compute overall_score as the exact sum of the five criterion scores.
 - Then assign tier strictly from overall_score:
-  - Strong: 70-100
-  - Median: 40-69
-  - Weak: 0-39
+  - Strong: 60-100
+  - Median: 30-59
+  - Weak: 0-29
 - Only after scores, overall_score, and tier are fixed, draft the criterion reasons, tier_justification, and key_differences_vs_target.
 - Do not revise scores while writing explanations unless the validation checklist reveals a rule violation.
 
@@ -407,9 +407,9 @@ Validation checklist before final output:
   - Geographic & Regulatory Market Relevance: 0, 4, 8, 12, 15
 - overall_score equals the exact sum of the 5 criterion scores.
 - tier matches the score band rule exactly:
-  - Strong: 70-100
-  - Median: 40-69
-  - Weak: 0-39
+  - Strong: 60-100
+  - Median: 30-59
+  - Weak: 0-29
 - key_differences_vs_target has 1-3 non-empty strings.
 - confidence is exactly one of: high, medium, low.
 - confidence follows the exact deterministic order:
