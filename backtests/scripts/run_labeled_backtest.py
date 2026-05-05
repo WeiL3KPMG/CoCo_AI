@@ -281,9 +281,30 @@ def call_openai_chat(
 
 
 def _extract_retry_after_seconds(error_text: str) -> float | None:
-    match = re.search(r"try again in\\s+([0-9]+(?:\\.[0-9]+)?)s", error_text, re.IGNORECASE)
-    if not match:
-        return None
+    # OpenAI can return either "try again in 8.34s" or "try again in 184ms".
+    sec_match = re.search(
+        r"try again in\s+([0-9]+(?:\.[0-9]+)?)s",
+        error_text,
+        re.IGNORECASE,
+    )
+    if sec_match:
+        try:
+            return float(sec_match.group(1))
+        except ValueError:
+            return None
+
+    ms_match = re.search(
+        r"try again in\s+([0-9]+(?:\.[0-9]+)?)ms",
+        error_text,
+        re.IGNORECASE,
+    )
+    if ms_match:
+        try:
+            return float(ms_match.group(1)) / 1000.0
+        except ValueError:
+            return None
+
+    return None
 
 
 def compute_request_hash(
