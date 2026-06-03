@@ -50,5 +50,22 @@ Each run writes a folder under `backtests/runs/<timestamp>/`:
 - `--compare-prompt prompts/Core/compare_prompt.txt`
 - `--config secrets/scoring_config.json`
 - `--model gpt-4o-mini-2024-07-18`
+- `--provider openai` (default) or `--provider deepseek`
+- `--base-url https://api.deepseek.com/v1`
+- `--api-key-env DEEPSEEK_API_KEY`
 - `--max-candidates 20`
 - `--positive-tiers Strong,Median`
+
+## DeepSeek Pilot Run
+
+Create a DeepSeek config from `secrets/scoring_config.deepseek.example.json`, then run:
+
+```bash
+python backtests/scripts/run_labeled_backtest.py --config secrets/scoring_config.deepseek.json --max-candidates 20 --no-cache
+```
+
+## Example
+
+```bash
+python backtests/scripts/run_labeled_backtest.py --input-excel "backtests/datasets/CoCo_examples.xlsx" --sleep-seconds 1.5 --max-retries 8 --no-cache
+```

@@ -13,6 +13,8 @@ from typing import Any
 
 
 MODEL_SNAPSHOT_PATTERN = re.compile(r".*-\d{4}-\d{2}-\d{2}$")
+DEFAULT_PROVIDER = "openai"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 EXPECTED_CRITERIA = [
     ("Business Model & Activities", 40, {0, 10, 20, 30, 40}),
     ("Strategic & Sector Alignment", 25, {0, 6, 12, 18, 25}),
@@ -60,6 +62,23 @@ BOUNDARY_EXTRA_CALLS = 4
 def is_snapshot_model_name(model: str) -> bool:
     """Return True when model name appears date-pinned (e.g. gpt-4o-mini-2024-07-18)."""
     return bool(MODEL_SNAPSHOT_PATTERN.fullmatch(model.strip()))
+
+
+def normalize_provider(value: Any) -> str:
+    provider = str(value or DEFAULT_PROVIDER).strip().lower()
+    return provider or DEFAULT_PROVIDER
+
+
+def normalize_base_url(value: Any, provider: str) -> str:
+    base_url = str(value or "").strip()
+    if base_url:
+        return base_url.rstrip("/")
+    if provider == "openai":
+        return DEFAULT_OPENAI_BASE_URL
+    raise ValueError(
+        "Missing base URL for non-OpenAI provider. "
+        "Set 'base_url' in config or pass --base-url."
+    )
 
 
 def coerce_config_bool(value: Any, default: bool) -> bool:
@@ -587,8 +606,9 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
         return None
 
 
-def call_openai_chat(
+def call_chat_completion(
     api_key: str,
+    api_base_url: str,
     model: str,
     prompt_text: str,
     temperature: float,
@@ -599,7 +619,7 @@ def call_openai_chat(
     json_mode: bool,
     timeout_seconds: int = 120,
 ) -> tuple[str, dict[str, Any]]:
-    url = "https://api.openai.com/v1/chat/completions"
+    url = f"{api_base_url.rstrip('/')}/chat/completions"
     payload = {
         "model": model,
         "temperature": temperature,
@@ -640,6 +660,8 @@ def run_batch(
     prompts_jsonl: Path,
     output_jsonl: Path,
     api_key: str,
+    api_base_url: str,
+    provider: str,
     model: str,
     sleep_seconds: float,
     max_retries: int,
@@ -655,7 +677,7 @@ def run_batch(
     json_mode: bool,
     cache_path: Path,
 ) -> None:
-    if require_snapshot_model and not is_snapshot_model_name(model):
+    if provider == "openai" and require_snapshot_model and not is_snapshot_model_name(model):
         raise ValueError(
             "Model must be snapshot/date-pinned when --require-snapshot-model is set. "
             f"Received: {model!r}. Example: gpt-4o-mini-2024-07-18"
@@ -700,7 +722,7 @@ def run_batch(
         boundary_extra_completion_tokens = 0
         boundary_extra_total_tokens = 0
         request_hash = compute_request_hash(
-            model=model,
+            model=f"{provider}:{model}",
             prompt_text=prompt_text,
             temperature=temperature,
             top_p=top_p,
@@ -757,8 +779,9 @@ def run_batch(
         else:
             for attempt in range(1, max_retries + 1):
                 try:
-                    model_output_text, raw_api_response = call_openai_chat(
+                    model_output_text, raw_api_response = call_chat_completion(
                         api_key=api_key,
+                        api_base_url=api_base_url,
                         model=model,
                         prompt_text=prompt_text,
                         temperature=temperature,
@@ -806,8 +829,9 @@ def run_batch(
                                 boundary_score_samples = [score_raw]
                                 for _ in range(BOUNDARY_EXTRA_CALLS):
                                     try:
-                                        extra_output_text, extra_raw = call_openai_chat(
+                                        extra_output_text, extra_raw = call_chat_completion(
                                             api_key=api_key,
+                                            api_base_url=api_base_url,
                                             model=model,
                                             prompt_text=prompt_text,
                                             temperature=temperature,
@@ -913,6 +937,7 @@ def run_batch(
             "candidate_key": row.get("candidate_key"),
             "company_name": row.get("company_name"),
             "ticker": row.get("ticker"),
+            "provider": provider,
             "model": model,
             "response_model": str(raw_api_response.get("model", "")).strip(),
             "status": "ok" if error_message is None else "error",
@@ -973,6 +998,7 @@ def run_batch(
         f"total_tokens={total_tokens}"
     )
     summary = {
+        "provider": provider,
         "model": model,
         "total_rows": total,
         "ok_count": success_count,
@@ -994,7 +1020,7 @@ def run_batch(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Call OpenAI API one-by-one for each stored CoCo prompt."
+        description="Call chat completion API one-by-one for each stored CoCo prompt."
     )
     parser.add_argument(
         "--prompts-jsonl",
@@ -1007,14 +1033,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Output JSONL path for model results.",
     )
     parser.add_argument(
+        "--provider",
+        default="",
+        help="API provider (default: openai).",
+    )
+    parser.add_argument(
+        "--base-url",
+        default="",
+        help="API base URL (e.g. https://api.openai.com/v1 or https://api.deepseek.com/v1).",
+    )
+    parser.add_argument(
+        "--api-key-env",
+        default="",
+        help="Environment variable name for API key fallback (e.g. OPENAI_API_KEY, DEEPSEEK_API_KEY).",
+    )
+    parser.add_argument(
         "--api-key",
         default="",
-        help="OpenAI API key. If empty, reads config file then OPENAI_API_KEY.",
+        help="API key. If empty, reads config file then env var configured by --api-key-env/api_key_env.",
     )
     parser.add_argument(
         "--model",
         default="",
-        help="OpenAI chat model.",
+        help="Chat model name.",
     )
     parser.add_argument(
         "--require-snapshot-model",
@@ -1112,15 +1153,20 @@ def main() -> None:
 
     config = load_runtime_config(Path(args.config))
 
-    api_key = (
-        args.api_key.strip()
-        or str(config.get("api_key", "")).strip()
-        or os.getenv("OPENAI_API_KEY", "").strip()
+    provider = normalize_provider(args.provider or config.get("provider"))
+    api_base_url = normalize_base_url(args.base_url or config.get("base_url"), provider)
+    api_key_env = (
+        args.api_key_env.strip()
+        or str(config.get("api_key_env", "")).strip()
+        or ("OPENAI_API_KEY" if provider == "openai" else "")
     )
+    api_key = args.api_key.strip() or str(config.get("api_key", "")).strip()
+    if not api_key and api_key_env:
+        api_key = os.getenv(api_key_env, "").strip()
     if not api_key:
         raise ValueError(
-            "Missing API key. Use --api-key, set secrets/scoring_config.json api_key, "
-            "or set OPENAI_API_KEY."
+            "Missing API key. Use --api-key, set config api_key, or set environment variable "
+            f"{api_key_env!r}."
         )
 
     model = args.model.strip() or str(config.get("model", "")).strip() or "gpt-4o-mini"
@@ -1161,7 +1207,7 @@ def main() -> None:
     if seed == -1:
         seed = None
 
-    if not is_snapshot_model_name(model):
+    if provider == "openai" and not is_snapshot_model_name(model):
         print(
             "Warning: model name is not date-pinned. "
             "For stronger reproducibility use a snapshot model name "
@@ -1172,6 +1218,8 @@ def main() -> None:
         prompts_jsonl=Path(args.prompts_jsonl),
         output_jsonl=Path(args.output_jsonl),
         api_key=api_key,
+        api_base_url=api_base_url,
+        provider=provider,
         model=model,
         sleep_seconds=args.sleep_seconds,
         max_retries=args.max_retries,

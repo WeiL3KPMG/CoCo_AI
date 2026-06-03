@@ -86,6 +86,64 @@ Tip: to disable a configured seed from CLI, pass `--seed -1`.
 
 Do not commit `secrets/scoring_config.json`; it is listed in `.gitignore`.
 
+## Stability and Reproducibility Controls
+
+This project uses multiple guardrails together to reduce scoring drift across runs.
+
+### 1) Evidence-grounded scoring (anti-hallucination)
+
+- Prompt contract requires criterion-level `evidence_quotes` (verbatim snippets from provided text).
+- If a criterion has no direct quote evidence, score is forced to the lowest allowed band and evidence is treated as `low`.
+- Runtime normalization in scoring scripts enforces this fallback to keep behavior deterministic.
+
+Why it helps:
+- Reduces unsupported reasoning and criterion score swings.
+- Makes each score auditable from text evidence.
+
+### 2) Edge-case handling near tier boundaries
+
+Tier boundaries are currently:
+- `Weak`: `0-29`
+- `Median`: `30-59`
+- `Strong`: `60-100`
+
+For scores near boundaries (within configured margin), the system runs extra samples:
+- Initial call + `BOUNDARY_EXTRA_CALLS` (currently 4), up to 5 samples total.
+- Each sample is mapped to a tier.
+- Final boundary decision uses **majority-tier voting** (not global score median).
+- Output stores `boundary_score_samples` and `boundary_tier_votes` for audit.
+
+Why it helps:
+- Stabilizes final band classification where small score movement can flip tiers.
+- Makes tie/near-tie behavior explicit and reviewable.
+
+### 3) Deterministic inference settings
+
+Recommended runtime settings:
+- `temperature = 0.0`
+- `top_p = 1.0`
+- `frequency_penalty = 0.0`
+- `presence_penalty = 0.0`
+- fixed `seed` (e.g. `42`)
+
+Important note:
+- These improve consistency, but do not guarantee bit-for-bit identical outputs in all cases.
+
+### 4) AI version control (model pinning)
+
+- Use date-pinned model snapshots (for example `gpt-4o-2024-08-06`).
+- Enable `require_snapshot_model = true` to reject non-pinned aliases.
+- Enable `enforce_response_model_match = true` to fail rows if response model differs from requested model.
+
+Why it helps:
+- Prevents silent backend model drift from changing scoring behavior over time.
+
+### 5) Caching strategy
+
+- Cache can be enabled to replay identical prior results for identical prompt + parameters.
+- For fresh consistency tests, use `--no-cache`.
+- For production stability, cache can reduce rerun variance and cost.
+
 ## Commands to Run
 
 From project root.

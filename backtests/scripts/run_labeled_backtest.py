@@ -45,6 +45,8 @@ ALLOWED_SCORE_BANDS: dict[str, list[int]] = {
 TIER_CUTOFFS = (30, 60)
 TIER_CUTOFF_MARGIN = 5
 BOUNDARY_EXTRA_CALLS = 4
+DEFAULT_PROVIDER = "openai"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 
 @dataclass
@@ -88,14 +90,29 @@ def parse_args() -> argparse.Namespace:
         help="JSON config path with model/api settings.",
     )
     parser.add_argument(
+        "--provider",
+        default="",
+        help="API provider (default: openai).",
+    )
+    parser.add_argument(
+        "--base-url",
+        default="",
+        help="API base URL (e.g. https://api.openai.com/v1 or https://api.deepseek.com/v1).",
+    )
+    parser.add_argument(
+        "--api-key-env",
+        default="",
+        help="Environment variable name for API key fallback (e.g. OPENAI_API_KEY, DEEPSEEK_API_KEY).",
+    )
+    parser.add_argument(
         "--api-key",
         default="",
-        help="OpenAI API key override. If empty, falls back to config and OPENAI_API_KEY.",
+        help="API key override. If empty, falls back to config and env var from api_key_env.",
     )
     parser.add_argument(
         "--model",
         default="",
-        help="OpenAI model override. If empty, falls back to config and gpt-4o-mini.",
+        help="Model override. If empty, falls back to config and gpt-4o-mini.",
     )
     parser.add_argument(
         "--temperature",
@@ -235,6 +252,23 @@ def _coerce_config_bool(value: Any, default: bool) -> bool:
     return default
 
 
+def _normalize_provider(value: Any) -> str:
+    provider = str(value or DEFAULT_PROVIDER).strip().lower()
+    return provider or DEFAULT_PROVIDER
+
+
+def _normalize_base_url(value: Any, provider: str) -> str:
+    base_url = str(value or "").strip()
+    if base_url:
+        return base_url.rstrip("/")
+    if provider == "openai":
+        return DEFAULT_OPENAI_BASE_URL
+    raise ValueError(
+        "Missing base URL for non-OpenAI provider. "
+        "Set 'base_url' in config or pass --base-url."
+    )
+
+
 def _is_snapshot_model_name(model: str) -> bool:
     # Snapshot names usually end with a date suffix, e.g. gpt-4o-2024-08-06.
     return bool(re.search(r"\d{4}-\d{2}-\d{2}$", model.strip()))
@@ -304,9 +338,10 @@ def render_prompt(prompt_template: str, target_text: str, ticker: str, descripti
     )
 
 
-def call_openai_chat(
+def call_chat_completion(
     *,
     api_key: str,
+    api_base_url: str,
     model: str,
     prompt_text: str,
     temperature: float,
@@ -326,7 +361,7 @@ def call_openai_chat(
     if seed is not None:
         payload["seed"] = seed
     request = urllib.request.Request(
-        url="https://api.openai.com/v1/chat/completions",
+        url=f"{api_base_url.rstrip('/')}/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -590,6 +625,7 @@ def normalize_parsed_output(parsed_output: dict[str, Any] | None) -> tuple[dict[
 def _call_and_normalize_once(
     *,
     api_key: str,
+    api_base_url: str,
     model: str,
     prompt_text: str,
     temperature: float,
@@ -597,8 +633,9 @@ def _call_and_normalize_once(
     json_mode: bool,
     seed: int | None,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any], list[str], str | None]:
-    model_output_text, raw_api_response = call_openai_chat(
+    model_output_text, raw_api_response = call_chat_completion(
         api_key=api_key,
+        api_base_url=api_base_url,
         model=model,
         prompt_text=prompt_text,
         temperature=temperature,
@@ -724,14 +761,20 @@ def main() -> None:
     args = parse_args()
     config = load_json_config(Path(args.config))
 
-    api_key = (
-        args.api_key.strip()
-        or str(config.get("api_key", "")).strip()
-        or os.getenv("OPENAI_API_KEY", "").strip()
+    provider = _normalize_provider(args.provider or config.get("provider"))
+    api_base_url = _normalize_base_url(args.base_url or config.get("base_url"), provider)
+    api_key_env = (
+        args.api_key_env.strip()
+        or str(config.get("api_key_env", "")).strip()
+        or ("OPENAI_API_KEY" if provider == "openai" else "")
     )
+    api_key = args.api_key.strip() or str(config.get("api_key", "")).strip()
+    if not api_key and api_key_env:
+        api_key = os.getenv(api_key_env, "").strip()
     if not api_key:
         raise ValueError(
-            "Missing API key. Use --api-key, config api_key, or OPENAI_API_KEY."
+            "Missing API key. Use --api-key, config api_key, or set env var "
+            f"{api_key_env!r}."
         )
 
     model = args.model.strip() or str(config.get("model", "")).strip() or "gpt-4o-mini"
@@ -747,7 +790,7 @@ def main() -> None:
         config.get("enforce_response_model_match"), False
     )
 
-    if require_snapshot_model and not _is_snapshot_model_name(model):
+    if provider == "openai" and require_snapshot_model and not _is_snapshot_model_name(model):
         raise ValueError(
             "Config requires a snapshot model, but requested model is not pinned: "
             f"'{model}'. Use a snapshot name like 'gpt-4o-YYYY-MM-DD'."
@@ -809,7 +852,7 @@ def main() -> None:
         boundary_score_samples: list[int] = []
         boundary_tier_votes: dict[str, int] = {}
         request_hash = compute_request_hash(
-            model=model,
+            model=f"{provider}:{model}",
             prompt_text=prompt_text,
             temperature=temperature,
             top_p=top_p,
@@ -861,6 +904,7 @@ def main() -> None:
                         error,
                     ) = _call_and_normalize_once(
                         api_key=api_key,
+                        api_base_url=api_base_url,
                         model=model,
                         prompt_text=prompt_text,
                         temperature=temperature,
@@ -877,6 +921,7 @@ def main() -> None:
                                 try:
                                     _, extra_parsed, _, extra_notes, extra_error = _call_and_normalize_once(
                                         api_key=api_key,
+                                        api_base_url=api_base_url,
                                         model=model,
                                         prompt_text=prompt_text,
                                         temperature=temperature,
@@ -980,6 +1025,7 @@ def main() -> None:
             "status": status,
             "error": error,
             "normalization_notes": normalization_notes,
+            "provider": provider,
             "response_model": str(raw_api_response.get("model", "")).strip(),
             "from_cache": from_cache,
             "boundary_stabilization_applied": boundary_stabilization_applied,
@@ -1021,6 +1067,7 @@ def main() -> None:
         "datasets_dir": args.datasets_dir,
         "dataset_files": [p.name for p in excel_paths],
         "compare_prompt": args.compare_prompt,
+        "provider": provider,
         "model_requested": model,
         "request_seed": seed,
         "require_snapshot_model": require_snapshot_model,
